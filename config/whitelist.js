@@ -1,3 +1,3 @@
-const whitelist = ["http://localhost:5173", "http://example2.com"];
+const whitelist = ["http://localhost:5173"];
 
 module.exports = whitelist;

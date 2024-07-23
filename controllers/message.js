@@ -6,7 +6,7 @@ const {
 } = require("../config/conversation");
 const { add } = require("date-fns");
 const { msgInterval } = require("../config/conversation");
-const User = require("../models/user");
+const User = require("../models/User");
 
 const transformMsg = ({ msg }) => {
   const { _id, replyMsgId, ...rest } = msg;
@@ -62,7 +62,6 @@ exports.getDirectMessages = async (req, res, next) => {
       },
     })
     .populate("numberOfMessages");
-  console.log("numberOfMessages", retCvs.numberOfMessages);
   if (!retCvs)
     return res.status(404).json({
       status: "error",
@@ -84,8 +83,6 @@ exports.getDirectMessages = async (req, res, next) => {
     },
     { $set: { unread: false } }
   );
-
-  console.log("numUnread", unreadMs.matchedCount); // Number of documents modified
 
   // solve for deleted and unread msg,
   // because of sort: { createdAt: -1 } when getMsg, all msg is ordered from latest to oldest
@@ -127,7 +124,6 @@ exports.getGroupMessages = async (req, res) => {
       },
     })
     .populate("numberOfMessages");
-  console.log("numberOfMessages", retCvs.numberOfMessages);
   if (!retCvs)
     return res.status(404).json({
       status: "error",
@@ -150,8 +146,6 @@ exports.getGroupMessages = async (req, res) => {
     { $set: { unread: false } }
   );
 
-  console.log("numUnread", unreadMs.matchedCount); // Number of documents modified
-
   // solve for deleted and unread msg,
   // because of sort: { createdAt: -1 } when getMsg, all msg is ordered from latest to oldest
   // FE need reverse order of that so for loop is suitable.
@@ -168,7 +162,6 @@ exports.getGroupMessages = async (req, res) => {
 
 exports.createTextMsg = async ({ userId, chatType, newMsg }) => {
   const { to, from, text, conversationId, type, isReply, replyMsgId } = newMsg;
-  console.log("newMsg at createTextMsg", newMsg);
 
   const chat = await cvsDB[chatType].findById(conversationId);
 
@@ -188,7 +181,6 @@ exports.createTextMsg = async ({ userId, chatType, newMsg }) => {
   };
 
   let res = await msgDB[chatType].create(new_message);
-  console.log("res1", typeof res);
 
   if (res.isReply) {
     await res.populate({
@@ -196,8 +188,6 @@ exports.createTextMsg = async ({ userId, chatType, newMsg }) => {
       select: "_id isDeleted text from",
     });
   }
-
-  console.log("res", res);
 
   // update unread msg
   const unreadMs = await msgDB[chatType].updateMany(

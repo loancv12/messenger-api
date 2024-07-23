@@ -1,5 +1,5 @@
 const mongoose = require("mongoose");
-const User = require("../models/user");
+const User = require("../models/User");
 const FriendShip = require("../models/FriendShip");
 const filterObj = require("../utils/filterObj");
 const { transformObj, replaceId } = require("../utils/transform");
@@ -50,7 +50,6 @@ exports.getUsers = async (req, res, next) => {
     .lean();
 
   const remainUsers = allUsers.filter((user) => {
-    console.log("uer have id?", user.id);
     // flag to check if current user is in relation.
     // this relation can be curr user sending friend req to other, accepted friend req or block other user
     const isInRelation = friendShips.find(
@@ -67,9 +66,6 @@ exports.getUsers = async (req, res, next) => {
     },
   };
   const solveUsers = remainUsers.map((user) => {
-    console.log("users", transformObj(user, transformMap));
-    console.log("users", user);
-
     return transformObj(user, transformMap);
   });
 
@@ -179,7 +175,6 @@ exports.makeFriendReq = async ({ from, to }) => {
       recipientId: "recipient",
     },
   });
-  console.log("solveRes", solveRes);
 
   return solveRes;
 };
@@ -200,7 +195,6 @@ exports.declineFriendReq = async ({ requestId }) => {
       path: "recipientId",
       select: "_id firstName lastName",
     });
-  console.log("request at decline friend req", request);
 
   const transformMap = {
     _id: { newKey: "id" },

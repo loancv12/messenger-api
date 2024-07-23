@@ -2,8 +2,6 @@ const { isObjectIdOrHexString } = require("mongoose");
 
 // only use for transform of doc
 function replaceId(doc, ret, options) {
-  console.log("run replaceId");
-
   if (options.replace) {
     Object.keys(options.replace).forEach(function (oldKey) {
       const newKey = options.replace[oldKey];

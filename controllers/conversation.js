@@ -1,6 +1,6 @@
 const { chatTypes, cvsDB, msgDB } = require("../config/conversation");
 const GroupConversation = require("../models/GroupConversation");
-const User = require("../models/user");
+const User = require("../models/User");
 const DirectConversation = require("../models/DirectConversation");
 const makeMsgForRes = require("../utils/msgForRes");
 const GroupUserRelation = require("../models/GroupUserRelation");
@@ -9,7 +9,6 @@ const { transformObj } = require("../utils/transform");
 const { populate } = require("dotenv");
 
 const transformCvs = ({ userId, type, conversation }) => {
-  console.log("transformCvs", conversation);
   const {
     _id,
     participants,
@@ -47,7 +46,6 @@ const transformCvs = ({ userId, type, conversation }) => {
     };
   } else {
     const isAnyOneOnline = participants.find((user) => user.online);
-    console.log("isAnyOneOnline", isAnyOneOnline);
     solveCvs = {
       ...solveCvs,
       ...{
@@ -80,7 +78,6 @@ exports.getDirectConversations = async (req, res) => {
   const { type } = req.query;
 
   const { userId } = req.user;
-  console.log("userId at get conversation", userId);
 
   if (!Object.values(chatTypes).includes(type))
     return res
@@ -108,7 +105,6 @@ exports.getDirectConversations = async (req, res) => {
       conversation,
     })
   );
-  console.log("soLVE cvs", solveList);
 
   res
     .status(200)
@@ -148,7 +144,6 @@ exports.getGroupConversations = async (req, res) => {
       conversation,
     })
   );
-  console.log("soLVE cvs", solveList);
 
   res
     .status(200)
@@ -219,8 +214,6 @@ exports.startConversation = async ({ userId, from, to }) => {
       match: { $and: [{ unread: true }, { from: { $not: { $eq: userId } } }] },
     });
 
-  console.log("existCvs", existCvs);
-
   let conversation;
 
   // if there is no conversation between 2 pp
@@ -259,7 +252,6 @@ exports.createGroup = async ({ name, members, adminId }) => {
     name,
     participants: [adminId],
   });
-  console.log("new group", newGroup);
 
   await GroupUserRelation.create({
     groupId: newGroup._id,

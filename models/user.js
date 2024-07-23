@@ -54,10 +54,6 @@ const userSchema = new Schema(
       type: Date,
     },
 
-    socket_id: {
-      type: String,
-    },
-
     online: {
       type: Boolean,
     },
@@ -67,7 +63,6 @@ const userSchema = new Schema(
 );
 
 userSchema.pre("save", async function (next) {
-  console.log("hash otp", this.otp);
   // Only run this function is otp is actually modified
   if (!this.isModified("otp")) return next();
 
@@ -79,11 +74,7 @@ userSchema.pre("save", async function (next) {
 });
 
 userSchema.pre("save", async function (next) {
-  console.log("hash password", this.password);
-
   if (!this.isModified("password")) return next();
-  // hash the password with the cost of 12
-
   this.password = await bcrypt.hash(this.password, 12);
 
   // next();
@@ -97,7 +88,6 @@ userSchema.methods.correctPassword = async function (
 };
 
 userSchema.methods.correctOTP = async function (candidateOTP, userOTP) {
-  console.log("otp", candidateOTP, userOTP);
   return await bcrypt.compare(candidateOTP, userOTP);
 };
 
@@ -113,10 +103,7 @@ userSchema.methods.createPasswordResetToken = function () {
 };
 
 userSchema.methods.changedPasswordAfter = function (timestamp) {
-  // console.log("timestamp", timestamp);
-  // console.log("utc", new Date(timestamp * 1000).toUTCString());
   const passwordChangeTimes = Date.parse(this.passWordChangeAt);
-  // console.log("this.passWordChangeAt", passwordChangeTimes);
   return timestamp * 1000 < passwordChangeTimes;
 };
 

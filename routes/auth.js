@@ -1,10 +1,9 @@
 const router = require("express").Router();
 const authController = require("../controllers/auth");
-const verifyJWT = require("../middlewares/verifyJWT");
 
 router.post("/login", authController.login);
 router.get("/refresh", authController.refresh);
-router.post("/logout", verifyJWT, authController.logout);
+router.post("/logout", authController.logout);
 router.post("/register", authController.register, authController.sendOTP);
 router.post("/resend-otp", authController.resendOTP, authController.sendOTP);
 router.post("/send-otp", authController.sendOTP);

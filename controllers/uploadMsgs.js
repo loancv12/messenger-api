@@ -1,4 +1,4 @@
-const { instance, emitToFromAndTo } = require("../socket");
+const { instance } = require("../socket");
 const { add } = require("date-fns");
 const { msgInterval } = require("../config/conversation");
 const { uploadFileToFb } = require("../services/firebase");
@@ -91,21 +91,9 @@ const uploadFiles = async (req, res) => {
     };
 
     if (chatType === chatTypes.DIRECT_CHAT) {
-      await emitToFromAndTo(
-        io,
-        {
-          id: to,
-          event: "new_messages",
-          payload,
-        },
-        {
-          id: from,
-          event: "new_messages",
-          payload,
-        }
-      );
+      io.to(to).to(from).emit("new_messages", payload);
     } else {
-      io.in(conversationId).emit("new_messages", payload);
+      io.to(conversationId).emit("new_messages", payload);
     }
   } else
     return res

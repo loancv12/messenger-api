@@ -6,7 +6,7 @@ const bcrypt = require("bcrypt");
 const otpTemplate = require("../Templates/Mail/otp");
 //
 
-const User = require("../models/user");
+const User = require("../models/User");
 const filterObj = require("../utils/filterObj");
 const mailService = require("../services/mailer");
 const makeMsgForRes = require("../utils/msgForRes");
@@ -159,7 +159,6 @@ exports.verifyOTP = async (req, res, next) => {
   await user.save({ validateModifiedOnly: true });
 
   const token = signToken(user._id, user.email);
-  console.log("token", token);
   res
     .status(200)
     .json(makeMsgForRes("success", "OTP verified successfully", token));
@@ -194,7 +193,7 @@ exports.login = async (req, res, next) => {
     },
     process.env.ACCESS_TOKEN_SECRET,
     {
-      expiresIn: "1m",
+      expiresIn: "15m",
     }
   );
 
@@ -227,7 +226,6 @@ exports.login = async (req, res, next) => {
 
     // no one have this token, => token was use by strange user, not foundUser, so not provide any token
     if (!foundToken) {
-      console.log("attemped refresh token reuse at login");
       // clear out ALL previous refresh tokens
       newRefreshTokenArray = [];
     }
@@ -252,22 +250,28 @@ exports.login = async (req, res, next) => {
     // sameSite: "None", //cross-site cookie
     maxAge: 7 * 24 * 60 * 60 * 1000, //cookie expiry: set to match rT
   });
-
-  res
-    .status(200)
-    .json(makeMsgForRes("success", "Login successfully", accessToken));
+  const test = JSON.stringify({
+    message: "Login successfully",
+    data: accessToken,
+  });
+  //makeMsgForRes("success", "Login successfully", accessToken)
+  res.status(200).json({
+    message: "Login successfully",
+    data: accessToken,
+  });
 };
 
 exports.refresh = async (req, res, next) => {
   const cookies = req?.cookies;
-  console.log("cookies at refresh", cookies);
   if (!cookies?.jwt)
     return res.status(401).json(makeMsgForRes("error", "Unauthorized"));
   const oldRefreshToken = cookies.jwt;
 
+  // clear old cookie in browser
   res.clearCookie("jwt", {
-    httpOnly: true,
-    //  sameSite: "None", secure: true
+    http: true,
+    // sameSite: "None",
+    // secure: true,
   });
 
   const foundUser = await User.findOne({
@@ -276,17 +280,14 @@ exports.refresh = async (req, res, next) => {
 
   // detected refresh token reuse!
   if (!foundUser) {
-    //
     jwt.verify(oldRefreshToken, process.env.REFRESH_TOKEN_SECRET),
       async (err, decoded) => {
         if (err) return res.sendStatus(403);
-        console.log("attempted refresh token reuse");
         // token still valid :<< but no one have this=>
         // user be hacked and be stolen token,
         const hackedUser = await User.findById(decoded.userInfo.userId).exec();
         hackedUser.refreshTokens = [];
         const result = await hackedUser.save();
-        console.log("result", result);
       };
     return res.sendStatus(403);
   }
@@ -301,11 +302,11 @@ exports.refresh = async (req, res, next) => {
     process.env.REFRESH_TOKEN_SECRET,
     async (err, decoded) => {
       if (err) {
-        console.log("refresh token expired"); // user must login again
         foundUser.refreshTokens = [...newRefreshTokenArray];
       }
-      if (err || foundUser._id.toString() !== decoded.userInfo.userId)
+      if (err || foundUser._id.toString() !== decoded.userInfo.userId) {
         return res.sendStatus(403);
+      }
 
       // refresh token still valid, provide new acc and rotate refresh
       const accessToken = jwt.sign(
@@ -316,7 +317,7 @@ exports.refresh = async (req, res, next) => {
         },
         process.env.ACCESS_TOKEN_SECRET,
         {
-          expiresIn: "1m",
+          expiresIn: "15m",
         }
       );
 
@@ -332,13 +333,14 @@ exports.refresh = async (req, res, next) => {
         }
       );
 
-      foundUser.refreshToken = [...newRefreshTokenArray, newRefreshToken];
+      foundUser.refreshTokens = [...newRefreshTokenArray, newRefreshToken];
       await foundUser.save();
 
       res.cookie("jwt", newRefreshToken, {
         httpOnly: true,
-        // sameSite: "None",
-        // secure: true,
+        // secure: true, //https
+        // sameSite: "None", //cross-site cookie
+        maxAge: 7 * 24 * 60 * 60 * 1000, //cookie expiry: set to match rT
       });
 
       res.json(
@@ -353,20 +355,17 @@ exports.refresh = async (req, res, next) => {
 };
 
 exports.logout = async (req, res, next) => {
-  // TODO
-  console.log("req at logout");
-  const { userId } = req.user;
-
   const cookies = req.cookies;
   if (!cookies?.jwt)
     return res
       .status(204)
       .json(makeMsgForRes("success", "Logout successfully"));
-  const refreshToken = cookies.jwt;
 
+  const refreshToken = cookies.jwt;
   const foundUser = await User.findOne({
     refreshTokens: { $in: refreshToken },
   }).exec();
+
   if (!foundUser) {
     res.clearCookie("jwt", {
       httpOnly: true,
@@ -406,7 +405,6 @@ exports.forgetPassword = async (req, res, next) => {
 
   // generate a random reset token
   const resetToken = user.createPasswordResetToken();
-  console.log("resetToken", resetToken);
 
   try {
     const resetURL = `https://tawk.com/auth/reset-password?token=${resetToken}`;
@@ -447,8 +445,6 @@ exports.resetPassword = async (req, res, next) => {
     return res
       .status(400)
       .json(makeMsgForRes("error", "Token and your new password is required"));
-
-  console.log("params", resetToken);
 
   const hashedToken = crypto
     .createHash("sha256")
