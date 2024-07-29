@@ -45,6 +45,10 @@ const DirectMessageSchema = new mongoose.Schema(
       type: Boolean,
       default: true,
     },
+    sentSuccess: {
+      type: Boolean,
+      default: false,
+    },
   },
   {
     timestamps: true,

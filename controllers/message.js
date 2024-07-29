@@ -18,8 +18,19 @@ const transformMsg = ({ msg }) => {
     solveMsg.file = "Message is deleted";
   }
 
+  if (solveMsg.isReply) {
+    const { text, _id, ...rest } = msg.replyMsgId;
+    solveMsg.replyMsg = {
+      ...rest,
+      id: _id,
+      text: msg.replyMsgId.isDeleted
+        ? "Message is deleted"
+        : msg.replyMsgId.text,
+    };
+  }
   solveMsg.replyMsg = solveMsg.isReply
     ? {
+        ...msg.replyMsgId,
         id: msg.replyMsgId._id,
         from: msg.replyMsgId.from,
         text: msg.replyMsgId.isDeleted
@@ -28,69 +39,94 @@ const transformMsg = ({ msg }) => {
       }
     : null;
 
-  if (solveMsg.unread) {
-    solveMsg.unread = false;
-  }
   return solveMsg;
 };
 
 exports.transformMsg = transformMsg;
 
 exports.getDirectMessages = async (req, res, next) => {
-  const { type, conversationId, page = 1 } = req.query;
-
-  const { userId } = req.user;
-
-  if (!Object.values(chatTypes).includes(type) || !conversationId || page < 1)
+  const { type, conversationId, endCursor, startCursor } = req.query;
+  console.log("startCursor", startCursor, endCursor);
+  if (!Object.values(chatTypes).includes(type) || !conversationId || !endCursor)
     return res.status(400).json({
-      error: "Type must be direct_chat or group_chat. Page must be >=1",
+      error: "Type must be direct_chat or group_chat",
     });
 
-  const retCvs = await cvsDB[type]
-    .findById(conversationId, "messages")
-    .lean()
-    .populate({
-      path: "messages",
-      options: {
-        sort: { createdAt: -1 },
-        skip: msgsLimit * (page - 1),
-        perDocumentLimit: msgsLimit,
-      },
-      populate: {
-        path: "replyMsgId",
-        select: "_id text from isDeleted",
-      },
-    })
-    .populate("numberOfMessages");
+  let retCvs;
+  let isHaveMoreMsg;
+  if (!startCursor) {
+    retCvs = await cvsDB[type]
+      .findById(conversationId, "messages")
+      .lean()
+      .populate({
+        path: "messages",
+        options: {
+          sort: { createdAt: -1 },
+          // add msgsLimit+1 to check isHaveMoreMsg, if it return 21=> have more, else, dont have more
+          perDocumentLimit: msgsLimit + 1,
+        },
+        populate: {
+          path: "replyMsgId",
+          select: "_id text from isDeleted createdAt",
+        },
+        match: { createdAt: { $lt: endCursor } },
+      });
+
+    isHaveMoreMsg = retCvs.messages.length === msgsLimit + 1 ? 1 : "";
+  } else {
+    retCvs = await cvsDB[type]
+      .findById(conversationId, "messages")
+      .lean()
+      .populate({
+        path: "messages",
+        options: {
+          sort: { createdAt: -1 },
+        },
+        populate: {
+          path: "replyMsgId",
+          select: "_id text from isDeleted createdAt",
+        },
+        match: {
+          $and: [
+            { createdAt: { $gte: startCursor } },
+            { createdAt: { $lt: endCursor } },
+          ],
+        },
+      });
+
+    const res = await cvsDB[type]
+      .findById(conversationId, "messages")
+      .lean()
+      .populate({
+        path: "messages",
+        options: {
+          perDocumentLimit: 1,
+          match: { createdAt: { $lt: startCursor } },
+        },
+      });
+    isHaveMoreMsg = res ? 1 : "";
+  }
+
   if (!retCvs)
     return res.status(404).json({
       status: "error",
       messages: "Conversation not found",
     });
 
-  res.append(
-    "x-pagination",
-    `${retCvs ? Math.ceil(retCvs.numberOfMessages / msgsLimit) : 1}`
-  );
+  res.append("x-pagination", isHaveMoreMsg);
 
-  const unreadMs = await msgDB[type].updateMany(
-    {
-      $and: [
-        { conversationId },
-        { unread: true },
-        { from: { $not: { $eq: userId } } },
-      ],
-    },
-    { $set: { unread: false } }
-  );
-
-  // solve for deleted and unread msg,
-  // because of sort: { createdAt: -1 } when getMsg, all msg is ordered from latest to oldest
-  // FE need reverse order of that so for loop is suitable.
-  const solveList = [];
-  for (let i = retCvs.messages.length - 1; i >= 0; i--) {
-    solveList.push(transformMsg({ msg: retCvs.messages[i] }));
+  // because of sort: { createdAt: -1 } when getMsg, all msg is ordered from latest:0 to oldest:21
+  // cause when get 21 msgs, we need to pop it
+  const msgs = retCvs.messages;
+  if (!startCursor && isHaveMoreMsg) {
+    msgs.pop();
   }
+
+  // solve for deleted msg
+  // reverse it: oldest:0 to latest:20
+  const solveList = msgs.map((_, i) =>
+    transformMsg({ msg: msgs[msgs.length - 1 - i] })
+  );
 
   res.status(200).json({
     messages: "Get message successfully",
@@ -99,60 +135,88 @@ exports.getDirectMessages = async (req, res, next) => {
 };
 
 exports.getGroupMessages = async (req, res) => {
-  const { type, conversationId, page = 1 } = req.query;
-
-  const { userId } = req.user;
-
-  if (!Object.values(chatTypes).includes(type) || !conversationId || page < 1)
+  const { type, conversationId, endCursor, startCursor } = req.query;
+  console.log("startCursor", startCursor, endCursor);
+  if (!Object.values(chatTypes).includes(type) || !conversationId || !endCursor)
     return res.status(400).json({
-      error: "Type must be direct_chat or group_chat. Page must be >=1",
+      error: "Type must be direct_chat or group_chat",
     });
 
-  const retCvs = await cvsDB[type]
-    .findById(conversationId, "messages")
-    .lean()
-    .populate({
-      path: "messages",
-      options: {
-        sort: { createdAt: -1 },
-        skip: msgsLimit * (page - 1),
-        perDocumentLimit: msgsLimit,
-      },
-      populate: {
-        path: "replyMsgId",
-        select: "_id text from isDeleted",
-      },
-    })
-    .populate("numberOfMessages");
+  let retCvs;
+  let isHaveMoreMsg;
+  if (!startCursor) {
+    retCvs = await cvsDB[type]
+      .findById(conversationId, "messages")
+      .lean()
+      .populate({
+        path: "messages",
+        options: {
+          sort: { createdAt: -1 },
+          // add msgsLimit+1 to check isHaveMoreMsg, if it return 21=> have more, else, dont have more
+          perDocumentLimit: msgsLimit + 1,
+        },
+        populate: {
+          path: "replyMsgId",
+          select: "_id text from isDeleted createdAt",
+        },
+        match: { createdAt: { $lt: endCursor } },
+      });
+
+    isHaveMoreMsg = retCvs.messages.length === msgsLimit + 1 ? 1 : "";
+  } else {
+    retCvs = await cvsDB[type]
+      .findById(conversationId, "messages")
+      .lean()
+      .populate({
+        path: "messages",
+        options: {
+          sort: { createdAt: -1 },
+        },
+        populate: {
+          path: "replyMsgId",
+          select: "_id text from isDeleted createdAt",
+        },
+        match: {
+          $and: [
+            { createdAt: { $gte: startCursor } },
+            { createdAt: { $lt: endCursor } },
+          ],
+        },
+      });
+
+    const res = await cvsDB[type]
+      .findById(conversationId, "messages")
+      .lean()
+      .populate({
+        path: "messages",
+        options: {
+          perDocumentLimit: 1,
+          match: { createdAt: { $lt: startCursor } },
+        },
+      });
+    isHaveMoreMsg = res ? 1 : "";
+  }
+
   if (!retCvs)
     return res.status(404).json({
       status: "error",
       messages: "Conversation not found",
     });
 
-  res.append(
-    "x-pagination",
-    `${retCvs ? Math.ceil(retCvs.numberOfMessages / msgsLimit) : 1}`
-  );
+  res.append("x-pagination", isHaveMoreMsg);
 
-  const unreadMs = await msgDB[type].updateMany(
-    {
-      $and: [
-        { conversationId },
-        { unread: true },
-        { from: { $not: { $eq: userId } } },
-      ],
-    },
-    { $set: { unread: false } }
-  );
-
-  // solve for deleted and unread msg,
-  // because of sort: { createdAt: -1 } when getMsg, all msg is ordered from latest to oldest
-  // FE need reverse order of that so for loop is suitable.
-  const solveList = [];
-  for (let i = retCvs.messages.length - 1; i >= 0; i--) {
-    solveList.push(transformMsg({ msg: retCvs.messages[i] }));
+  // because of sort: { createdAt: -1 } when getMsg, all msg is ordered from latest:0 to oldest:21
+  // cause when get 21 msgs, we need to pop it
+  const msgs = retCvs.messages;
+  if (!startCursor && isHaveMoreMsg) {
+    msgs.pop();
   }
+
+  // solve for deleted msg
+  // reverse it: oldest:0 to latest:20
+  const solveList = msgs.map((_, i) =>
+    transformMsg({ msg: msgs[msgs.length - 1 - i] })
+  );
 
   res.status(200).json({
     messages: "Get message successfully",
@@ -190,16 +254,16 @@ exports.createTextMsg = async ({ userId, chatType, newMsg }) => {
   }
 
   // update unread msg
-  const unreadMs = await msgDB[chatType].updateMany(
-    {
-      $and: [
-        { conversationId },
-        { unread: true },
-        { from: { $not: { $eq: userId } } },
-      ],
-    },
-    { $set: { unread: false } }
-  );
+  // const unreadMs = await msgDB[chatType].updateMany(
+  //   {
+  //     $and: [
+  //       { conversationId },
+  //       { unread: true },
+  //       { from: { $not: { $eq: userId } } },
+  //     ],
+  //   },
+  //   { $set: { unread: false } }
+  // );
 
   // update latest time
   chat.lastMsgCreatedTime = res.createdAt;
@@ -208,6 +272,13 @@ exports.createTextMsg = async ({ userId, chatType, newMsg }) => {
 
   const solveMsg = transformMsg({ userId, msg: res.toObject() });
   return solveMsg;
+};
+
+exports.updateSentSuccessMsg = async ({ msgId, chatType }) => {
+  console.log("updateSentSuccessMsg", msgId, chatType);
+  const res = await msgDB[chatType].findByIdAndUpdate(msgId, {
+    sentSuccess: true,
+  });
 };
 
 exports.deleteMsg = async ({ msgId, type }) => {

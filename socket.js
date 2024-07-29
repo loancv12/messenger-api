@@ -14,7 +14,10 @@ class SocketIOService {
   }
   initIo(server) {
     SocketIOService.#io = new Server(server, {
-      connectionStateRecovery: {},
+      connectionStateRecovery: {
+        // the backup duration of the sessions and the packets
+        maxDisconnectionDuration: 2 * 60 * 1000,
+      },
       cors: {
         // i try allowRequest, but it no work
         origin: whitelist,

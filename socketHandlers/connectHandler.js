@@ -19,5 +19,6 @@ module.exports = (io, socket) => {
       // update the connection status of the session
       await User.findByIdAndUpdate(userId, { online: false });
     }
+    socket.leave(userId);
   });
 };
