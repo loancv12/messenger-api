@@ -9,12 +9,13 @@ const {
   msgDB,
   msgsLimit,
 } = require("../config/conversation");
-const { transformMsg } = require("./message");
+const { transformMsg, updateSentSuccessMsgs } = require("./message");
 
 const uploadFiles = async (req, res) => {
   const { files } = req;
   const { to, from, conversationId, chatType, isReply, replyMsgId } = req.body;
-  if (!files.length)
+  console.log("files", files);
+  if (!files?.length)
     return res
       .status(404)
       .json(makeMsgForRes("error", "There is no file exist"));
@@ -22,76 +23,105 @@ const uploadFiles = async (req, res) => {
   const chat = await cvsDB[chatType].findById(conversationId).exec();
 
   // upload to fire storage and db
-  const newMessages = await Promise.all(
+  // sorry for this stupid name
+  const linkAndNameAndTypes = await Promise.all(
     files.map(async (file, i) => {
-      const { originalname, mimetype, fileName, path, size } = file;
+      const { originalname, mimetype, size, buffer } = file;
 
-      // TODO: check size
-
+      const ext = originalname.substring(originalname.lastIndexOf("."));
       // handling of filename containing utf-8 characters
       const originalnameUft8 = Buffer.from(originalname, "latin1").toString(
         "utf8"
       );
-      const destination = `${Date.now().toString()}_${originalnameUft8}`;
-      const options = {
-        metadata: {
-          resumable: false,
-          metadata: {
-            contentType: mimetype,
-          },
-        },
+
+      const blobFile = new Blob([buffer]);
+      // avoid use originalname, create new one instead, read docs for more about Limitations on References
+      const path = `message/${Date.now().toString()}`;
+      const name = `${path}.${ext}`;
+      const metadata = {
+        contentType: mimetype,
+        name,
+        size,
       };
+
       const link = await uploadFileToFb({
         path,
-        destination,
-        options,
+        blobFile,
+        metadata,
       });
-
-      //
-      const isStartMsg =
-        add(chat.lastMsgCreatedTime, { minutes: msgInterval }) < new Date();
-
-      const newMessage = {
-        conversationId,
-        from,
+      return {
+        link,
+        originalname: originalnameUft8,
         type: mimetype.startsWith("image") ? "img" : "doc",
-        text: originalnameUft8,
-        file: link,
-        isReply,
-        // cause of append of formdata convert value to string, so value of replyMsgId can be ''
-        // '' can not cast to ObjectId
-        replyMsgId: replyMsgId ? replyMsgId : null,
-        isStartMsg,
-        ...(chatType === chatTypes.DIRECT_CHAT && { to }),
       };
-      const res = await msgDB[chatType].create(newMessage);
-
-      if (res.isReply) {
-        await res.populate({
-          path: "replyMsgIdId",
-          select: "_id isDeleted text from",
-        });
-      }
-
-      chat.lastMsgCreatedTime = res.createdAt;
-      await chat.save();
-
-      const solveMsg = transformMsg({ msg: res.toObject() });
-      return solveMsg;
     })
   );
 
-  // emit event to other side
+  // after msgInterval min, if y send a msg, thif msg have a timeline above it, this var to check it
+  const isStartMsg =
+    add(chat.lastMsgCreatedTime, { minutes: msgInterval }) < new Date();
+
+  // make all image as a single msg
+  const newMessages = linkAndNameAndTypes.reduce(
+    (clarifiedMsgs, { link, originalname, type }, i) => {
+      console.log("link and type", { link, originalname, type });
+      const imgMsgIndex = clarifiedMsgs.findIndex(
+        (newMsg) => newMsg.type === "img"
+      );
+
+      if (type === "img" && imgMsgIndex !== -1) {
+        // do clarifiedMsgs have a msg that type img, if yes, push a link to it, not create one
+        clarifiedMsgs[imgMsgIndex].files.push({ link, alt: originalname });
+      } else {
+        const newMessage = {
+          conversationId,
+          from,
+          type,
+          text: "",
+          files: [{ link, alt: originalname }],
+          isReply,
+          // cause of append of formdata convert value to string, so value of replyMsgId can be ''
+          // '' can not cast to ObjectId
+          replyMsgId: replyMsgId ? replyMsgId : null,
+          isStartMsg: i === 0 ? isStartMsg : false,
+          ...(chatType === chatTypes.DIRECT_CHAT && { to }),
+        };
+        clarifiedMsgs.push(newMessage);
+      }
+
+      return clarifiedMsgs;
+    },
+    []
+  );
+
+  // create new messages and populate, i know some comment look stupid, but it good for visually separate the block of logic
+  const ret = await msgDB[chatType].create(newMessages);
+
+  if (isReply) {
+    await msgDB[chatType].populate(ret, {
+      path: "replyMsgIdId",
+      select: "_id isDeleted text from",
+    });
+  }
+
+  // make sure lastMsgCreatedTime is last msg createdAt, cause the virtual field lastMsg of Direct or Group Cvs need it
+  chat.lastMsgCreatedTime = ret[ret.length - 1].createdAt;
+  await chat.save();
+
+  const solveMsgs = ret.map((msg) => transformMsg({ msg: msg.toObject() }));
+
+  // emit it to to and from
   const io = instance.getIO();
   if (instance.ready()) {
     const payload = {
       conversationId,
-      messages: newMessages,
+      messages: solveMsgs,
       chatType,
     };
 
     if (chatType === chatTypes.DIRECT_CHAT) {
-      io.to(to).to(from).emit("new_messages", payload);
+      io.to(from).emit("new_messages", payload);
+      io.to(to).emit("new_messages", payload);
     } else {
       io.to(conversationId).emit("new_messages", payload);
     }

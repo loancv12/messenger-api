@@ -2,7 +2,7 @@ const { chatTypes, msgDB } = require("../config/conversation");
 const {
   createTextMsg,
   deleteMsg,
-  updateSentSuccessMsg,
+  updateSentSuccessMsgs,
 } = require("../controllers/message");
 const { errorHandler } = require("../socket");
 
@@ -19,7 +19,7 @@ module.exports = (io, socket) => {
 
   socket.on(
     "text_message",
-    errorHandler(socket, async (data, callback) => {
+    errorHandler(socket, async (data) => {
       console.log("text_message", data);
       const { type: chatType, newMsg } = data;
       const { to, from, conversationId } = newMsg;
@@ -31,20 +31,36 @@ module.exports = (io, socket) => {
         chatType: chatType,
       };
 
-      const callbackForSentSuccess = async () => {
-        console.log("call callback");
-        await updateSentSuccessMsg({
-          chatType,
-          msgId: res.id.toString(),
-        });
-        callback({ chatType, msgId: res.id.toString(), status: "success" });
+      if (chatType === chatTypes.DIRECT_CHAT) {
+        io.to(from).emit("new_messages", payload);
+        io.to(to).emit("new_messages", payload);
+      } else {
+        io.in(conversationId).emit("new_messages", payload);
+      }
+    })
+  );
+
+  socket.on(
+    "receive_new_msgs",
+    errorHandler(socket, async (data) => {
+      const { chatType, messages, conversationId } = data;
+
+      await updateSentSuccessMsgs({
+        chatType,
+        messages,
+        sentSuccess: "success",
+      });
+
+      const payload = {
+        ...data,
+        sentSuccess: "success",
       };
 
       if (chatType === chatTypes.DIRECT_CHAT) {
-        io.to(from).emit("new_messages", payload);
-        io.to(to).emit("new_messages", payload, callbackForSentSuccess);
+        io.to(messages[0].from).emit("update_sent_success", payload);
+        io.to(messages[0].to).emit("update_sent_success", payload);
       } else {
-        io.in(conversationId).emit("new_messages", payload);
+        io.in(messages[0].conversationId).emit("update_sent_success", payload);
       }
     })
   );
@@ -59,12 +75,13 @@ module.exports = (io, socket) => {
       const msg = await msgDB[type].findById(msgId);
       if (msg.from.toString() === userId) {
         const delMsg = await deleteMsg({ msgId, type });
+        console.log("delMsg", delMsg);
 
         const payload = { msgId, type };
         if (type === chatTypes.DIRECT_CHAT) {
-          socket
-            .to(delMsg.to)
-            .to(delMsg.from)
+          // meo no lai bi loi nay, REMEMBER any id must be with toString()
+          io.to(delMsg.to.toString())
+            .to(delMsg.from.toString())
             .emit("delete_message_ret", payload);
         } else {
           io.in(delMsg.conversationId.toString()).emit(
@@ -73,7 +90,10 @@ module.exports = (io, socket) => {
           );
         }
       } else {
-        socket.to(userId).emit("delete_message_ret", {
+        console.log("userId at delete msg", userId);
+        // careful when use socket.to(userId) ,
+        // cause In that case, every socket in the room excluding the sender will get the event.
+        io.to(userId).emit("delete_message_ret", {
           status: "error",
           message: "You don't not have permission to delete this msg",
         });

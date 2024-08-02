@@ -1,4 +1,5 @@
 const mongoose = require("mongoose");
+const Attachment = require("./Attachment");
 
 const DirectMessageSchema = new mongoose.Schema(
   {
@@ -33,9 +34,7 @@ const DirectMessageSchema = new mongoose.Schema(
     text: {
       type: String,
     },
-    file: {
-      type: String,
-    },
+    files: [Attachment],
     //a talk often last for a period time, is this msg is start msg of period
     isStartMsg: {
       type: Boolean,
@@ -46,8 +45,10 @@ const DirectMessageSchema = new mongoose.Schema(
       default: true,
     },
     sentSuccess: {
-      type: Boolean,
-      default: false,
+      type: String,
+      enum: ["unset", "error", "success"],
+      default: "unset",
+      require: true,
     },
   },
   {

@@ -28,9 +28,12 @@ const GroupMessageSchema = new mongoose.Schema(
     text: {
       type: String,
     },
-    file: {
-      type: String,
-    },
+    files: [
+      {
+        type: String,
+        default: [],
+      },
+    ],
     //a talk often last for a period time, is this msg is start msg of period
     isStartMsg: {
       type: Boolean,

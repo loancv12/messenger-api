@@ -15,7 +15,7 @@ const transformMsg = ({ msg }) => {
 
   if (solveMsg?.isDeleted) {
     solveMsg.text = "Message is deleted";
-    solveMsg.file = "Message is deleted";
+    solveMsg.files = [];
   }
 
   if (solveMsg.isReply) {
@@ -54,6 +54,9 @@ exports.getDirectMessages = async (req, res, next) => {
 
   let retCvs;
   let isHaveMoreMsg;
+
+  // startCursor is for when y click to replymsg
+  // it will call api with this var to get all the msg from the msg that replied to the endCursor msg(oldest msg in list in FE)
   if (!startCursor) {
     retCvs = await cvsDB[type]
       .findById(conversationId, "messages")
@@ -94,6 +97,7 @@ exports.getDirectMessages = async (req, res, next) => {
         },
       });
 
+    // cause dont know the num of msg, so must check if any msg is older than the msg is replied
     const res = await cvsDB[type]
       .findById(conversationId, "messages")
       .lean()
@@ -104,6 +108,7 @@ exports.getDirectMessages = async (req, res, next) => {
           match: { createdAt: { $lt: startCursor } },
         },
       });
+    // remember 1 is true, "" is false, cause the header will turn to string
     isHaveMoreMsg = res ? 1 : "";
   }
 
@@ -115,7 +120,6 @@ exports.getDirectMessages = async (req, res, next) => {
 
   res.append("x-pagination", isHaveMoreMsg);
 
-  // because of sort: { createdAt: -1 } when getMsg, all msg is ordered from latest:0 to oldest:21
   // cause when get 21 msgs, we need to pop it
   const msgs = retCvs.messages;
   if (!startCursor && isHaveMoreMsg) {
@@ -123,6 +127,7 @@ exports.getDirectMessages = async (req, res, next) => {
   }
 
   // solve for deleted msg
+  // because of sort: { createdAt: -1 } when getMsg, all msg is ordered from latest:0 to oldest:21
   // reverse it: oldest:0 to latest:20
   const solveList = msgs.map((_, i) =>
     transformMsg({ msg: msgs[msgs.length - 1 - i] })
@@ -274,14 +279,20 @@ exports.createTextMsg = async ({ userId, chatType, newMsg }) => {
   return solveMsg;
 };
 
-exports.updateSentSuccessMsg = async ({ msgId, chatType }) => {
-  console.log("updateSentSuccessMsg", msgId, chatType);
-  const res = await msgDB[chatType].findByIdAndUpdate(msgId, {
-    sentSuccess: true,
-  });
+exports.updateSentSuccessMsgs = async ({ chatType, messages, sentSuccess }) => {
+  console.log("updateSentSuccessMsgs", chatType, messages);
+  const res = await msgDB[chatType].updateMany(
+    {
+      _id: { $in: messages.map((msg) => msg.id) },
+    },
+    { $set: { sentSuccess } }
+  );
+  console.log("updateSentSuccessMsgs ret", res);
 };
 
 exports.deleteMsg = async ({ msgId, type }) => {
+  console.log("deleteMsg at delete msg", msgId);
+
   const delMsg = await msgDB[type]
     .findByIdAndUpdate(
       msgId,
