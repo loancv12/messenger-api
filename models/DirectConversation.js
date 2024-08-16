@@ -40,7 +40,7 @@ DirectConversationSchema.virtual("unreadMessages", {
   foreignField: "conversationId", // is equal to `foreignField`
   justOne: false,
   // need to override to get correct answer
-  match: { unread: false },
+  match: { readUserIds: [] },
 });
 
 DirectConversationSchema.virtual("lastMsg", {
@@ -56,7 +56,7 @@ DirectConversationSchema.virtual("numberOfUnreadMsgs", {
   localField: "_id",
   foreignField: "conversationId",
   // need to override to get correct answer
-  match: { unread: false },
+  match: { readUserIds: [] },
   count: true, // And only get the number of docs
 });
 

@@ -95,7 +95,9 @@ exports.getDirectConversations = async (req, res) => {
     .populate("lastMsg")
     .populate({
       path: "numberOfUnreadMsgs",
-      match: { $and: [{ unread: true }, { from: { $not: { $eq: userId } } }] },
+      match: {
+        $and: [{ readUserIds: [] }, { from: { $not: { $eq: userId } } }],
+      },
     });
 
   const solveList = existCvss.map((conversation) =>
@@ -134,7 +136,12 @@ exports.getGroupConversations = async (req, res) => {
     .populate("lastMsg")
     .populate({
       path: "numberOfUnreadMsgs",
-      match: { $and: [{ unread: true }, { from: { $not: { $eq: userId } } }] },
+      match: {
+        $and: [
+          { readUserIds: { $ne: userId } },
+          { from: { $not: { $eq: userId } } },
+        ],
+      },
     });
 
   const solveList = existCvss.map((conversation) =>
@@ -211,7 +218,9 @@ exports.startConversation = async ({ userId, from, to }) => {
     .populate("lastMsg")
     .populate({
       path: "numberOfUnreadMsgs",
-      match: { $and: [{ unread: true }, { from: { $not: { $eq: userId } } }] },
+      match: {
+        $and: [{ readUserIds: [] }, { from: { $not: { $eq: userId } } }],
+      },
     });
 
   let conversation;
@@ -293,6 +302,7 @@ exports.createGroup = async ({ name, members, adminId }) => {
 };
 
 exports.addMember = async ({ userId, requestId, groupId, newMemberId }) => {
+  console.log("addMember", userId, requestId, groupId, newMemberId);
   await JoinGroupRequest.findByIdAndUpdate(requestId, {
     status: "accepted",
   });
@@ -315,20 +325,17 @@ exports.addMember = async ({ userId, requestId, groupId, newMemberId }) => {
     }
   )
     .lean()
-    .populate("participants", "firstName lastName _id online")
-    .populate("lastMsg")
-    .populate({
-      path: "numberOfUnreadMsgs",
-      match: {
-        $and: [{ unread: true }, { from: { $not: { $eq: userId } } }],
-      },
-    });
+    .populate("participants", "firstName lastName _id online");
 
-  const solveList = transformCvs({
+  const conversation = transformCvs({
     userId,
     type: chatTypes.GROUP_CHAT,
-    conversation: updatedGroupCvs,
+    conversation: {
+      ...updatedGroupCvs,
+      lastMsg: null,
+      numberOfUnreadMsgs: 0,
+    },
   });
 
-  return solveList;
+  return conversation;
 };

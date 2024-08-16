@@ -40,9 +40,14 @@ const DirectMessageSchema = new mongoose.Schema(
       type: Boolean,
     },
     isDeleted: { type: Boolean, defaults: false },
-    unread: {
-      type: Boolean,
-      default: true,
+    readUserIds: {
+      type: [
+        {
+          type: mongoose.Types.ObjectId,
+          ref: "User",
+        },
+      ],
+      default: [],
     },
     sentSuccess: {
       type: String,

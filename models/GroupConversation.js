@@ -44,6 +44,15 @@ GroupConversationSchema.virtual("numberOfMessages", {
   count: true, // And only get the number of docs
 });
 
+GroupConversationSchema.virtual("unreadMessages", {
+  ref: "GroupMessage", // The model to use
+  localField: "_id", // Find people where `localField`
+  foreignField: "conversationId", // is equal to `foreignField`
+  justOne: false,
+  // need to override to get correct answer
+  match: { readUserIds: [] },
+});
+
 GroupConversationSchema.virtual("lastMsg", {
   ref: "GroupMessage",
   localField: "_id",
@@ -57,8 +66,8 @@ GroupConversationSchema.virtual("numberOfUnreadMsgs", {
   localField: "_id",
   foreignField: "conversationId",
   // REMEMBER: overide to get unread msg that msg from is userId
-  match: { unread: false },
   count: true, // And only get the number of docs
+  match: { readUserIds: [] },
 });
 
 const GroupConversation = new mongoose.model(

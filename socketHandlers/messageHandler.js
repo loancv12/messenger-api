@@ -1,19 +1,97 @@
-const { chatTypes, msgDB } = require("../config/conversation");
+const { chatTypes, msgDB, msgModels } = require("../config/conversation");
+const PersistMessage = require("../models/PersistMessage");
+const Client = require("../models/Client");
 const {
   createTextMsg,
   deleteMsg,
   updateSentSuccessMsgs,
+  transformMsg,
 } = require("../controllers/message");
 const { errorHandler } = require("../socket");
 
+const groupMsg = (foundMissMsgs) => {
+  const solveMsgs = foundMissMsgs.reduce((clarifiedMsgs, msg) => {
+    const chatType =
+      msgModels[chatTypes.DIRECT_CHAT] === msg.msgModel
+        ? chatTypes.DIRECT_CHAT
+        : chatTypes.GROUP_CHAT;
+    const conversationId = msg.msgId.conversationId.toString();
+
+    const existGroupIndex = clarifiedMsgs.findIndex(
+      (groupMsg) =>
+        groupMsg.chatType === chatType &&
+        groupMsg.conversationId.toString() === conversationId
+    );
+
+    // handle id and delete msg, reply msg
+    const solveMsg = transformMsg({ msg: msg.msgId });
+    if (existGroupIndex !== -1) {
+      clarifiedMsgs[existGroupIndex].messages.push(solveMsg);
+    } else {
+      const groupMsg = {
+        chatType,
+        conversationId,
+        messages: [solveMsg],
+      };
+      clarifiedMsgs.push(groupMsg);
+    }
+    return clarifiedMsgs;
+  }, []);
+
+  return solveMsgs;
+};
+
 module.exports = (io, socket) => {
   const userId = socket.userId;
+  const clientId = socket.clientId;
 
   socket.on(
-    "seen-msg",
-    errorHandler(socket, async (data) => {
-      const { lastMsgCreated, chatType } = data;
-      console.log("seen-msg", lastMsgCreated, chatType);
+    "miss-msg",
+    errorHandler(socket, async (data, callback) => {
+      const { date, userId, clientId } = data;
+      const foundMissMsgs = await PersistMessage.find({ clientId })
+        .lean()
+        .populate({
+          path: "msgId",
+          populate: {
+            path: "replyMsgId",
+            select: "_id text from isDeleted createdAt",
+          },
+        });
+
+      if (foundMissMsgs.length) {
+        await PersistMessage.deleteMany({ clientId });
+        // transform to compatible with FE, group msg that have same chatType and conversationId to 1 groupMsg
+        const solveMsgs = groupMsg(foundMissMsgs);
+        callback(solveMsgs);
+
+        // update msg in db and notice all from user that to user (this user) have receive miss msgs
+        await Promise.all(
+          solveMsgs.map(async ({ chatType, conversationId, messages }) => {
+            const payload = {
+              chatType,
+              conversationId,
+              messages,
+              sentSuccess: "success",
+            };
+
+            io.to(messages[0].from.toString()).emit(
+              "update_sent_success",
+              payload
+            );
+
+            // update the state of msg
+            await msgDB[chatType].updateMany(
+              {
+                _id: { $in: messages.map((msg) => msg.id) },
+              },
+              {
+                $set: { sentSuccess: "success" },
+              }
+            );
+          })
+        );
+      }
     })
   );
 
@@ -23,8 +101,24 @@ module.exports = (io, socket) => {
       console.log("text_message", data);
       const { type: chatType, newMsg } = data;
       const { to, from, conversationId } = newMsg;
-      console.log("userId at socket handler", userId);
       const res = await createTextMsg({ userId, chatType, newMsg });
+
+      // REMEMBER: this client is clientId of to user, not from user,
+      //  so when the to receive it, it will delete right clientId for right tab, not client for to user of another tab
+      // and when receiver miss it cause of lost connection, it will get right missed msg for it
+      // TODO: now, i only persist when chatType is direct chat,
+      // cause of this persist method is make many persist msg when chatType is groupChat
+      // i dont have other solution for make sure that every tab receive miss packet yet, if you have, please let me know so we can discuss it together
+      const clients = await Client.find({ userId: to }).lean();
+      await PersistMessage.create(
+        clients.map((client) => ({
+          clientId: client.clientId,
+          msgId: res.id.toString(),
+          msgModel: msgModels[chatType],
+          expireAt: new Date(),
+        }))
+      );
+
       const payload = {
         conversationId,
         messages: [res],
@@ -44,6 +138,13 @@ module.exports = (io, socket) => {
     "receive_new_msgs",
     errorHandler(socket, async (data) => {
       const { chatType, messages, conversationId } = data;
+
+      await PersistMessage.deleteMany({
+        $and: [
+          { msgId: { $in: [messages.map((msg) => msg.id)] } },
+          { clientId },
+        ],
+      });
 
       await updateSentSuccessMsgs({
         chatType,
@@ -66,6 +167,41 @@ module.exports = (io, socket) => {
   );
 
   socket.on(
+    "read_msg",
+    errorHandler(socket, async (data) => {
+      const { conversationId, chatType, from, to } = data;
+      console.log("read_msg", data);
+      if (chatType === chatTypes.DIRECT_CHAT) {
+        await msgDB[chatType].updateMany(
+          { conversationId, readUserIds: [] },
+          { $set: { readUserIds: [userId] } }
+        );
+      } else {
+        await msgDB[chatType].updateMany(
+          {
+            $and: [
+              { conversationId },
+              { readUserIds: { $not: { $all: [userId] } } },
+            ],
+          },
+          { $push: { readUserIds: userId } }
+        );
+      }
+
+      const payload = {
+        newSeenUserId: userId,
+        conversationId,
+        chatType,
+      };
+      if (chatType === chatTypes.DIRECT_CHAT) {
+        io.to(from).emit("update_read_users", payload);
+      } else {
+        io.in(conversationId).emit("update_read_users", payload);
+      }
+    })
+  );
+
+  socket.on(
     "delete_message",
     errorHandler(socket, async (data) => {
       const { msgId, type } = data;
@@ -75,9 +211,8 @@ module.exports = (io, socket) => {
       const msg = await msgDB[type].findById(msgId);
       if (msg.from.toString() === userId) {
         const delMsg = await deleteMsg({ msgId, type });
-        console.log("delMsg", delMsg);
 
-        const payload = { msgId, type };
+        const payload = { msgId, type, conversationId: msg.conversationId };
         if (type === chatTypes.DIRECT_CHAT) {
           // meo no lai bi loi nay, REMEMBER any id must be with toString()
           io.to(delMsg.to.toString())
@@ -90,7 +225,6 @@ module.exports = (io, socket) => {
           );
         }
       } else {
-        console.log("userId at delete msg", userId);
         // careful when use socket.to(userId) ,
         // cause In that case, every socket in the room excluding the sender will get the event.
         io.to(userId).emit("delete_message_ret", {

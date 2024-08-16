@@ -22,6 +22,11 @@ exports.chatTypes = chatTypes;
 exports.cvsDB = cvsDB;
 exports.msgDB = msgDB;
 
+exports.msgModels = {
+  [chatTypes.DIRECT_CHAT]: "DirectMessage",
+  [chatTypes.GROUP_CHAT]: "GroupMessage",
+};
+
 exports.msgsLimit = 20;
 exports.maxNumberOfFiles = 10;
 exports.msgInterval = 30; //30 mins

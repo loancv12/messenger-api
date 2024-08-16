@@ -43,20 +43,28 @@ module.exports = (io, socket) => {
       const groupId = newGroupCvs.id.toString();
       socket.join(groupId);
 
-      socket.to(adminId).emit("create_group_ret", {
+      io.to(adminId).emit("create_group_ret", {
         message: `Create room ${name} successfully`,
         newGroupCvs,
       });
 
       const admin = await User.findById(adminId, "firstName lastName");
       // invite other member to join room
-      for (const member of members) {
-        socket.to(member.id).emit("join_group_request", {
-          message: `${admin.firstName} ${admin.lastName} invite you to join group ${name}`,
-          group: { id: groupId, name },
-          sender: admin,
-        });
-      }
+      io.to(members.map((member) => member.id)).emit("join_group_request", {
+        message: `${admin.firstName} ${admin.lastName} invite you to join group ${name}`,
+        group: { id: groupId, name },
+        sender: admin,
+      });
+    })
+  );
+
+  socket.on(
+    "make_all_socket_of_admin_join_group",
+    errorHandler(socket, async (data) => {
+      console.log("make_all_socket_of_admin_join_group", data);
+      const { message, newGroupCvs } = data;
+
+      socket.join(newGroupCvs.id);
     })
   );
 

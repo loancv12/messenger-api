@@ -1,6 +1,6 @@
 const { instance } = require("../socket");
 const { add } = require("date-fns");
-const { msgInterval } = require("../config/conversation");
+const { msgInterval, msgModels } = require("../config/conversation");
 const { uploadFileToFb } = require("../services/firebase");
 const makeMsgForRes = require("../utils/msgForRes");
 const {
@@ -10,6 +10,8 @@ const {
   msgsLimit,
 } = require("../config/conversation");
 const { transformMsg, updateSentSuccessMsgs } = require("./message");
+const Client = require("../models/Client");
+const PersistMessage = require("../models/PersistMessage");
 
 const uploadFiles = async (req, res) => {
   const { files } = req;
@@ -109,6 +111,21 @@ const uploadFiles = async (req, res) => {
   await chat.save();
 
   const solveMsgs = ret.map((msg) => transformMsg({ msg: msg.toObject() }));
+
+  // REMEMBER: this client is clientId of to user, not from user,
+  //  so when the to receive it, it will delete right clientId for right tab, not client for to user of another tab
+  // and when receiver miss it cause of lost connection, it will get right missed msg for it
+  const clients = await Client.find({ userId: to }).lean();
+  const persistMsgs = clients.flatMap((client) =>
+    solveMsgs.map((msg) => ({
+      clientId: client.clientId,
+      msgId: msg.id.toString(),
+      msgModel: msgModels[chatType],
+      expireAt: new Date(),
+    }))
+  );
+
+  await PersistMessage.create(persistMsgs);
 
   // emit it to to and from
   const io = instance.getIO();

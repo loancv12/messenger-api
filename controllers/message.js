@@ -46,7 +46,7 @@ exports.transformMsg = transformMsg;
 
 exports.getDirectMessages = async (req, res, next) => {
   const { type, conversationId, endCursor, startCursor } = req.query;
-  console.log("startCursor", startCursor, endCursor);
+  console.log("req.query", req.query);
   if (!Object.values(chatTypes).includes(type) || !conversationId || !endCursor)
     return res.status(400).json({
       error: "Type must be direct_chat or group_chat",
@@ -75,7 +75,7 @@ exports.getDirectMessages = async (req, res, next) => {
         match: { createdAt: { $lt: endCursor } },
       });
 
-    isHaveMoreMsg = retCvs.messages.length === msgsLimit + 1 ? 1 : "";
+    isHaveMoreMsg = retCvs?.messages?.length === msgsLimit + 1 ? 1 : "";
   } else {
     retCvs = await cvsDB[type]
       .findById(conversationId, "messages")
@@ -141,7 +141,7 @@ exports.getDirectMessages = async (req, res, next) => {
 
 exports.getGroupMessages = async (req, res) => {
   const { type, conversationId, endCursor, startCursor } = req.query;
-  console.log("startCursor", startCursor, endCursor);
+  console.log("startCursor", startCursor, endCursor, type, conversationId);
   if (!Object.values(chatTypes).includes(type) || !conversationId || !endCursor)
     return res.status(400).json({
       error: "Type must be direct_chat or group_chat",
@@ -167,7 +167,7 @@ exports.getGroupMessages = async (req, res) => {
         match: { createdAt: { $lt: endCursor } },
       });
 
-    isHaveMoreMsg = retCvs.messages.length === msgsLimit + 1 ? 1 : "";
+    isHaveMoreMsg = retCvs?.messages?.length === msgsLimit + 1 ? 1 : "";
   } else {
     retCvs = await cvsDB[type]
       .findById(conversationId, "messages")
@@ -257,18 +257,6 @@ exports.createTextMsg = async ({ userId, chatType, newMsg }) => {
       select: "_id isDeleted text from",
     });
   }
-
-  // update unread msg
-  // const unreadMs = await msgDB[chatType].updateMany(
-  //   {
-  //     $and: [
-  //       { conversationId },
-  //       { unread: true },
-  //       { from: { $not: { $eq: userId } } },
-  //     ],
-  //   },
-  //   { $set: { unread: false } }
-  // );
 
   // update latest time
   chat.lastMsgCreatedTime = res.createdAt;

@@ -1,4 +1,5 @@
 const app = require("./app");
+const { setInterval } = require("node:timers/promises");
 require("dotenv").config();
 const port = process.env.PORT || 8000;
 const http = require("http");
@@ -39,6 +40,13 @@ connectDB();
 
 mongoose.connection.once("open", () => {
   console.log("Connected to MongoDB");
+  // (async function () {
+  //   for await (const startTime of setInterval(10*60*1000, Date.now())) {
+  //     // delete persist msg
+  //   }
+  //   console.log(Date.now());
+  // })();
+
   server.listen(port, () => {
     console.log(`Example app listening on port ${port}`);
   });

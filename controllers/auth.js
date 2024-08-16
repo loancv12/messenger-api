@@ -10,6 +10,8 @@ const User = require("../models/User");
 const filterObj = require("../utils/filterObj");
 const mailService = require("../services/mailer");
 const makeMsgForRes = require("../utils/msgForRes");
+const Client = require("../models/Client");
+const PersistMessage = require("../models/PersistMessage");
 
 // signup => register => send OTP => verified OTP
 
@@ -355,6 +357,8 @@ exports.refresh = async (req, res, next) => {
 };
 
 exports.logout = async (req, res, next) => {
+  const { clientId } = req.body;
+  console.log("clientId in lgout", clientId);
   const cookies = req.cookies;
   if (!cookies?.jwt)
     return res
@@ -382,6 +386,12 @@ exports.logout = async (req, res, next) => {
     (rft) => rft !== refreshToken
   );
   await foundUser.save();
+
+  // clear all the persist msg of clientId
+  await PersistMessage.deleteMany({
+    clientId,
+  });
+  await Client.deleteOne({ clientId });
 
   res.clearCookie("jwt", {
     httpOnly: true,
