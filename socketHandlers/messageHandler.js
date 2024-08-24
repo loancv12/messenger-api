@@ -103,6 +103,19 @@ module.exports = (io, socket) => {
       const { to, from, conversationId } = newMsg;
       const res = await createTextMsg({ userId, chatType, newMsg });
 
+      const payload = {
+        conversationId,
+        messages: [res],
+        chatType: chatType,
+      };
+
+      if (chatType === chatTypes.DIRECT_CHAT) {
+        io.to(from).emit("new_messages", payload);
+        io.to(to).emit("new_messages", payload);
+      } else {
+        io.in(conversationId).emit("new_messages", payload);
+      }
+
       // REMEMBER: this client is clientId of to user, not from user,
       //  so when the to receive it, it will delete right clientId for right tab, not client for to user of another tab
       // and when receiver miss it cause of lost connection, it will get right missed msg for it
@@ -118,19 +131,6 @@ module.exports = (io, socket) => {
           expireAt: new Date(),
         }))
       );
-
-      const payload = {
-        conversationId,
-        messages: [res],
-        chatType: chatType,
-      };
-
-      if (chatType === chatTypes.DIRECT_CHAT) {
-        io.to(from).emit("new_messages", payload);
-        io.to(to).emit("new_messages", payload);
-      } else {
-        io.in(conversationId).emit("new_messages", payload);
-      }
     })
   );
 

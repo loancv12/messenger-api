@@ -1,4 +1,5 @@
 const mongoose = require("mongoose");
+const Attachment = require("./Attachment");
 
 const GroupMessageSchema = new mongoose.Schema(
   {
@@ -28,12 +29,7 @@ const GroupMessageSchema = new mongoose.Schema(
     text: {
       type: String,
     },
-    files: [
-      {
-        type: String,
-        default: [],
-      },
-    ],
+    files: [Attachment],
     //a talk often last for a period time, is this msg is start msg of period
     isStartMsg: {
       type: Boolean,
@@ -48,13 +44,11 @@ const GroupMessageSchema = new mongoose.Schema(
       ],
       default: [],
     },
-    readUserIds: {
-      type: [
-        {
-          type: mongoose.Types.ObjectId,
-          ref: "User",
-        },
-      ],
+    sentSuccess: {
+      type: String,
+      enum: ["unset", "error", "success"],
+      default: "unset",
+      require: true,
     },
   },
   {

@@ -9,10 +9,6 @@ module.exports = async (io, socket) => {
   console.log("socketId", socket.id, userId);
   socket.join(userId);
 
-  const groups = await GroupUserRelation.find({ userId }, "groupId").lean();
-  console.log("groups", groups);
-  socket.join(groups.map((group) => group.groupId.toString()));
-
   // notify existing users
   socket.broadcast.emit("user connected", {
     userId: userId,
@@ -39,4 +35,7 @@ module.exports = async (io, socket) => {
       // right after sender emit event, msg is stored in db, so there is no missed in DirectMsg and GroupMsg
     }
   });
+
+  const groups = await GroupUserRelation.find({ userId }, "groupId").lean();
+  socket.join(groups.map((group) => group.groupId.toString()));
 };

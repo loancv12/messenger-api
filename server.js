@@ -13,6 +13,8 @@ const connectHandler = require("./socketHandlers/connectHandler");
 const relationShipHandler = require("./socketHandlers/relationShipHandler");
 const conversationHandler = require("./socketHandlers/conversationHandler");
 const messageHandler = require("./socketHandlers/messageHandler");
+const callHandler = require("./socketHandlers/callHandler");
+const verifyUserForCall = require("./middlewares/VerifyUserForCall");
 
 instance.initIo(server);
 const io = instance.getIO();
@@ -22,30 +24,28 @@ process.on("uncaughtException", (err) => {
   process.exit(1);
 });
 
-io.use(verifyIO);
-const onConnection = (socket) => {
+const mainNamespace = io.of("/");
+mainNamespace.use(verifyIO);
+mainNamespace.on("connection", (socket) => {
   connectHandler(io, socket);
   relationShipHandler(io, socket);
   conversationHandler(io, socket);
   messageHandler(io, socket);
-};
-io.on("connection", onConnection);
-let i = 0;
-// setInterval(() => {
-//   i++;
-//   io.emit("ping", `value of i: ${i}`);
-// }, 2000);
+});
+
+// client disconnect namespace when they out of video chat or accidental shut up tab
+// if i use only main namespace, when you left video chat, they must emit a my event is left_room
+// this event was emit when cleanup function of useEffect run, but when accidental shut up tab, cleanup not run
+const callNamespace = io.of("/call");
+callNamespace.use(verifyUserForCall);
+callNamespace.on("connection", (socket) => {
+  callHandler(io, socket);
+});
 
 connectDB();
 
 mongoose.connection.once("open", () => {
   console.log("Connected to MongoDB");
-  // (async function () {
-  //   for await (const startTime of setInterval(10*60*1000, Date.now())) {
-  //     // delete persist msg
-  //   }
-  //   console.log(Date.now());
-  // })();
 
   server.listen(port, () => {
     console.log(`Example app listening on port ${port}`);

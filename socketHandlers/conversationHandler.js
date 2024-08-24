@@ -105,4 +105,16 @@ module.exports = (io, socket) => {
       }
     })
   );
+
+  socket.on("make_invite_call", (data) => {
+    const { roomId, senderId, otherUserIdsInCvs } = data;
+    console.log("call_invite", data);
+    socket.to(otherUserIdsInCvs).emit("call_invite", { roomId, senderId });
+  });
+
+  socket.on("decline_invite", (data) => {
+    const { roomId, senderId, receiverId } = data;
+    console.log("decline_invite", roomId, senderId, receiverId);
+    socket.to(senderId).emit("decline_invite", data);
+  });
 };
