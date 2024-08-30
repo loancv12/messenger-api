@@ -33,8 +33,11 @@ const upload = multer({
 
     // To accept the file pass `true`, like so:
     if (isValidType && isVAlidExt) {
+      console.log("valid", file);
       cb(null, true);
     } else {
+      console.log("invalid", file);
+
       // To reject this file pass `false`, like so:
       cb(null, false);
     }

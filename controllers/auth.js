@@ -4,6 +4,8 @@ const otpGenerator = require("otp-generator");
 const crypto = require("crypto");
 const bcrypt = require("bcrypt");
 const otpTemplate = require("../Templates/Mail/otp");
+const { OAuth2Client } = require("google-auth-library");
+const axios = require("axios");
 //
 
 const User = require("../models/User");
@@ -12,6 +14,7 @@ const mailService = require("../services/mailer");
 const makeMsgForRes = require("../utils/msgForRes");
 const Client = require("../models/Client");
 const PersistMessage = require("../models/PersistMessage");
+const { googleEndpoints, getUserInfo } = require("../services/google");
 
 // signup => register => send OTP => verified OTP
 
@@ -261,6 +264,66 @@ exports.login = async (req, res, next) => {
     message: "Login successfully",
     data: accessToken,
   });
+};
+
+exports.loginWithGg = async (req, res, next) => {
+  const { codeResponse } = req.body;
+  const { code } = codeResponse;
+
+  const profile = await getUserInfo(code);
+
+  if (profile && profile.sub && profile.email) {
+    // make sure that email was verified
+    const {
+      sub,
+      name,
+      given_name: firstName,
+      family_name: lastName,
+      picture: avatar,
+      email,
+      email_verified: emailVerified,
+    } = profile;
+    if (!emailVerified)
+      return res
+        .status(404)
+        .json(makeMsgForRes("error", "Email of this account must be verified"));
+
+    // check that user log in app before
+    const existingUser = await User.findOne({
+      provider: "google",
+      email,
+    });
+
+    if (existingUser) {
+      // update local db
+      existingUser.firstName = firstName;
+      existingUser.lastName = lastName;
+      existingUser.avatar = avatar;
+      await existingUser.save();
+      console.log("existingUser", existingUser);
+    } else {
+      // create new user
+      const password = sub;
+      const newUser = await User.create({
+        email,
+        password,
+        provider: "google",
+        firstName,
+        lastName,
+        avatar,
+      });
+      console.log("new User", newUser);
+    }
+
+    req.body = {
+      email,
+      password: sub,
+    };
+
+    next();
+  } else {
+    return res.status(404).json(makeMsgForRes("error", "Profile not found"));
+  }
 };
 
 exports.refresh = async (req, res, next) => {

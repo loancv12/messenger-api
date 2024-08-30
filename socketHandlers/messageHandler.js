@@ -62,12 +62,12 @@ module.exports = (io, socket) => {
       if (foundMissMsgs.length) {
         await PersistMessage.deleteMany({ clientId });
         // transform to compatible with FE, group msg that have same chatType and conversationId to 1 groupMsg
-        const solveMsgs = groupMsg(foundMissMsgs);
-        callback(solveMsgs);
+        const groupMsgs = groupMsg(foundMissMsgs);
+        callback(groupMsgs);
 
         // update msg in db and notice all from user that to user (this user) have receive miss msgs
         await Promise.all(
-          solveMsgs.map(async ({ chatType, conversationId, messages }) => {
+          groupMsgs.map(async ({ chatType, conversationId, messages }) => {
             const payload = {
               chatType,
               conversationId,

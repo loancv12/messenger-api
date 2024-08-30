@@ -16,6 +16,10 @@ const userSchema = new Schema(
     avatar: {
       type: String,
     },
+    // only user that login via social have this property, and the password was profileId
+    provider: {
+      type: String,
+    },
     email: {
       type: String,
       required: [true, "Email name is required"],

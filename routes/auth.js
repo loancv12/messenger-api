@@ -1,6 +1,7 @@
 const router = require("express").Router();
 const authController = require("../controllers/auth");
 
+router.post("/login/google", authController.loginWithGg, authController.login);
 router.post("/login", authController.login);
 router.get("/refresh", authController.refresh);
 router.post("/logout", authController.logout);

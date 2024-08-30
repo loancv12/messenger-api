@@ -269,6 +269,7 @@ exports.createTextMsg = async ({ userId, chatType, newMsg }) => {
 
 exports.updateSentSuccessMsgs = async ({ chatType, messages, sentSuccess }) => {
   console.log("updateSentSuccessMsgs", chatType, messages);
+
   const res = await msgDB[chatType].updateMany(
     {
       _id: { $in: messages.map((msg) => msg.id) },

@@ -22,7 +22,7 @@ module.exports = (io, socket) => {
       });
       console.log("start_conversation ret", conversation);
 
-      socket.to(to).to(from).emit("start_chat", conversation);
+      io.to(to).to(from).emit("start_chat", conversation);
     })
   );
 
@@ -78,7 +78,7 @@ module.exports = (io, socket) => {
       }).lean();
 
       if (!res) {
-        socket.to(userId).emit("join_group_ret", {
+        io.to(userId).emit("join_group_ret", {
           status: "error",
           message: `Group not found or you not invited to this group`,
         });
@@ -109,12 +109,12 @@ module.exports = (io, socket) => {
   socket.on("make_invite_call", (data) => {
     const { roomId, senderId, otherUserIdsInCvs } = data;
     console.log("call_invite", data);
-    socket.to(otherUserIdsInCvs).emit("call_invite", { roomId, senderId });
+    io.to(otherUserIdsInCvs).emit("call_invite", { roomId, senderId });
   });
 
   socket.on("decline_invite", (data) => {
     const { roomId, senderId, receiverId } = data;
     console.log("decline_invite", roomId, senderId, receiverId);
-    socket.to(senderId).emit("decline_invite", data);
+    io.to(senderId).emit("decline_invite", data);
   });
 };
