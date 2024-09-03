@@ -1,6 +1,10 @@
 const { instance } = require("../socket");
 const { add } = require("date-fns");
-const { msgInterval, msgModels } = require("../config/conversation");
+const {
+  msgInterval,
+  msgModels,
+  imageFileTypesWithMIME,
+} = require("../config/conversation");
 const { uploadFileToFb } = require("../services/firebase");
 const makeMsgForRes = require("../utils/msgForRes");
 const {
@@ -51,10 +55,18 @@ const uploadFiles = async (req, res) => {
         blobFile,
         metadata,
       });
+
+      let isValidImgType = imageFileTypesWithMIME.find(
+        (type) => type.extension === ext && type.mimeType === mimetype
+      );
+      if (mimetype === "image/tiff") {
+        isValidImgType = false;
+      }
+
       return {
         link,
         originalname: originalnameUft8,
-        type: mimetype.startsWith("image") ? "img" : "doc",
+        type: isValidImgType ? "img" : "doc",
       };
     })
   );

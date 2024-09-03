@@ -20,9 +20,9 @@ module.exports = (io, socket) => {
         from,
         to,
       });
-      console.log("start_conversation ret", conversation);
+      console.log("start_conversation ret", { conversation });
 
-      io.to(to).to(from).emit("start_chat", conversation);
+      io.to(to).to(from).emit("start_chat", { conversation });
     })
   );
 

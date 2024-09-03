@@ -171,30 +171,28 @@ module.exports = (io, socket) => {
     errorHandler(socket, async (data) => {
       const { conversationId, chatType, from, to } = data;
       console.log("read_msg", data);
-      if (chatType === chatTypes.DIRECT_CHAT) {
-        await msgDB[chatType].updateMany(
-          { conversationId, readUserIds: [] },
-          { $set: { readUserIds: [userId] } }
-        );
-      } else {
-        await msgDB[chatType].updateMany(
-          {
-            $and: [
-              { conversationId },
-              { readUserIds: { $not: { $all: [userId] } } },
-            ],
-          },
-          { $push: { readUserIds: userId } }
-        );
-      }
+      const filter =
+        chatType === chatTypes.DIRECT_CHAT
+          ? { conversationId, readUserIds: [] }
+          : {
+              $and: [
+                { conversationId },
+                { readUserIds: { $not: { $all: [userId] } } },
+              ],
+            };
+      await msgDB[chatType].updateMany(filter, {
+        $set: { readUserIds: [userId] },
+      });
 
       const payload = {
         newSeenUserId: userId,
         conversationId,
         chatType,
       };
+
       if (chatType === chatTypes.DIRECT_CHAT) {
         io.to(from).emit("update_read_users", payload);
+        io.to(to).emit("update_read_users", payload);
       } else {
         io.in(conversationId).emit("update_read_users", payload);
       }

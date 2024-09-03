@@ -15,7 +15,7 @@ const friendShipSchema = new mongoose.Schema(
     status: {
       type: String,
       require: true,
-      enum: ["requested", "accepted", "declined", "blocked"],
+      enum: ["requested", "accepted"],
     },
   },
   {

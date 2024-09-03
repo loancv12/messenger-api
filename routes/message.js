@@ -25,14 +25,22 @@ const upload = multer({
   fileFilter: function fileFilter(req, file, cb) {
     const { mimetype, originalname } = file;
     console.log("at options of multer", file);
+    const extension = originalname.substring(originalname.lastIndexOf("."));
 
-    const isValidType = allowFileTypes.includes(mimetype);
+    const validExt = allowFileTypes.find(
+      (allowType) => allowType.extension === extension
+    );
 
-    const ext = originalname.substring(originalname.lastIndexOf("."));
-    const isVAlidExt = allowFileExts.includes(ext);
+    const isValidType =
+      validExt && (validExt.mimeType === mimetype || validExt?.notWideSp);
+
+    console.log("isValidType", isValidType);
+
+    // const isValidType = allowFileTypes.includes(mimetype);
+    // const isVAlidExt = allowFileExts.includes(ext);
 
     // To accept the file pass `true`, like so:
-    if (isValidType && isVAlidExt) {
+    if (isValidType) {
       console.log("valid", file);
       cb(null, true);
     } else {

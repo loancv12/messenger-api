@@ -1,6 +1,6 @@
 const { isObjectIdOrHexString } = require("mongoose");
 
-// only use for transform of doc
+// only use for transform of plain obj
 function replaceId(doc, ret, options) {
   if (options.replace) {
     Object.keys(options.replace).forEach(function (oldKey) {
@@ -13,7 +13,6 @@ function replaceId(doc, ret, options) {
   }
   return ret;
 }
-exports.replaceId = replaceId;
 // const rawObj = {
 //   notTransform: "notTransform",
 //   _id: "id",
@@ -49,7 +48,7 @@ exports.replaceId = replaceId;
 // transformObj(rawObj, transformMap2);
 // console.log(rawObj);
 
-// NOTE: this will modify rawObj
+// NOTE: this will modify rawObj,
 function transformObj(rawObj, transformMap) {
   // Function to apply transformations directly on the rawObj
   function applyTransform(obj, map) {
@@ -94,4 +93,35 @@ function transformObj(rawObj, transformMap) {
   return rawObj;
 }
 
+const transformId = {
+  _id: {
+    newKey: "id",
+  },
+};
+
+const transformFriendReq = {
+  _id: {
+    newKey: "id",
+  },
+  senderId: {
+    newKey: "sender",
+    nestedKey: {
+      _id: {
+        newKey: "id",
+      },
+    },
+  },
+  recipientId: {
+    newKey: "recipient",
+    nestedKey: {
+      _id: {
+        newKey: "id",
+      },
+    },
+  },
+};
+
+exports.replaceId = replaceId;
 exports.transformObj = transformObj;
+exports.transformId = transformId;
+exports.transformFriendReq = transformFriendReq;

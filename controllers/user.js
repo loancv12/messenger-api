@@ -2,7 +2,30 @@ const mongoose = require("mongoose");
 const User = require("../models/User");
 const FriendShip = require("../models/FriendShip");
 const filterObj = require("../utils/filterObj");
-const { transformObj, replaceId } = require("../utils/transform");
+const {
+  transformObj,
+  replaceId,
+  transformId,
+  transformFriendReq,
+} = require("../utils/transform");
+const makeMsgForRes = require("../utils/msgForRes");
+
+exports.getMe = async (req, res, next) => {
+  const { userId } = req.user;
+
+  const userInfo = await User.findById(
+    userId,
+    "_id firstName lastName online avatar"
+  ).lean();
+
+  return res.json(
+    makeMsgForRes(
+      "success",
+      "Get current user info successfully",
+      transformObj(userInfo, transformId)
+    )
+  );
+};
 
 exports.updateMe = async (req, res, next) => {
   const { user } = req;
@@ -30,43 +53,28 @@ exports.updateMe = async (req, res, next) => {
 exports.getUsers = async (req, res, next) => {
   const { userId } = req.user;
 
-  const allUsers = await User.find({
-    verified: true,
-  })
-    .select("firstName lastName id online")
-    .lean();
-
+  // get all user that I NOT make friend request, be requested make friend, be friend with
   const friendShips = await FriendShip.find({
-    $and: [
-      {
-        $or: [{ recipientId: userId }, { senderId: userId }],
-      },
-      {
-        status: { $not: { $eq: "declined" } },
-      },
-    ],
+    $or: [{ recipientId: userId }, { senderId: userId }],
   })
     .select("recipientId senderId")
     .lean();
 
-  const remainUsers = allUsers.filter((user) => {
-    // flag to check if current user is in relation.
-    // this relation can be curr user sending friend req to other, accepted friend req or block other user
-    const isInRelation = friendShips.find(
-      (relation) =>
-        relation.recipientId.toString() === user._id.toString() ||
-        relation.senderId.toString() === user._id.toString()
-    );
-    return !isInRelation && user._id.toString() !== userId;
+  const inRelationUsers = friendShips.map((friendShip) => {
+    const isSender = friendShip.senderId.toString() === userId;
+    return isSender
+      ? friendShip.recipientId.toString()
+      : friendShip.senderId.toString();
   });
 
-  const transformMap = {
-    _id: {
-      newKey: "id",
-    },
-  };
+  const remainUsers = await User.find({
+    $and: [{ verified: true }, { _id: { $nin: [...inRelationUsers, userId] } }],
+  })
+    .select("firstName lastName id online")
+    .lean();
+
   const solveUsers = remainUsers.map((user) => {
-    return transformObj(user, transformMap);
+    return transformObj(user, transformId);
   });
 
   res.status(200).json({
@@ -90,16 +98,11 @@ exports.getFriends = async (req, res, next) => {
     .populate({ path: "recipientId", select: "_id firstName lastName online" })
     .populate({ path: "senderId", select: "_id firstName lastName online" });
 
-  const transformMap = {
-    _id: {
-      newKey: "id",
-    },
-  };
   const solveUsers = friendShips.map((friendShip) => {
     const { recipientId, senderId } = friendShip;
     if (recipientId._id.toString() === userId) {
-      return transformObj(senderId, transformMap);
-    } else return transformObj(recipientId, transformMap);
+      return transformObj(senderId, transformId);
+    } else return transformObj(recipientId, transformId);
   });
 
   res.status(200).json({
@@ -120,93 +123,85 @@ exports.getRequests = async (req, res, next) => {
   })
     .select("-status")
     .lean()
-    .populate({ path: "recipientId", select: "_id firstName lastName online" })
+    .populate({
+      path: "recipientId",
+      select: "_id firstName lastName online",
+    })
     .populate({ path: "senderId", select: "_id firstName lastName online" });
 
-  const transformMap = {
-    _id: {
-      newKey: "id",
-    },
-  };
-  const solveUsers = friendShips.map((friendShip) => {
-    const { recipientId, senderId } = friendShip;
-    if (recipientId._id.toString() === userId) {
-      return {
-        id: friendShip._id,
-        user: { ...transformObj(senderId, transformMap) },
-        isSender: false,
-      };
-    } else
-      return {
-        id: friendShip._id,
-        user: { ...transformObj(recipientId, transformMap) },
-        isSender: true,
-      };
-  });
+  const solveFriendReq = friendShips.map((friendShip) =>
+    transformObj(friendShip, transformFriendReq)
+  );
 
   res.status(200).json({
     status: "success",
-    data: solveUsers,
+    data: solveFriendReq,
     message: "Friends requests Found successully",
   });
 };
 
-exports.makeFriendReq = async ({ from, to }) => {
+exports.makeFriendReq = async ({ senderId, recipientId }) => {
   const res = await FriendShip.create({
-    senderId: from,
-    recipientId: to,
+    senderId,
+    recipientId,
     status: "requested",
   });
 
   await res.populate({
     path: "senderId",
-    select: "_id firstName lastName",
+    select: "_id firstName lastName avatar",
   });
   await res.populate({
     path: "recipientId",
-    select: "_id firstName lastName",
+    select: "_id firstName lastName avatar",
   });
 
-  const solveRes = res.toObject({
-    transform: replaceId,
-    replace: {
-      _id: "id",
-      senderId: "sender",
-      recipientId: "recipient",
-    },
-  });
-
-  return solveRes;
+  return transformObj(res.toObject(), transformFriendReq);
 };
 
 exports.acceptFriendReq = async ({ requestId }) => {
   const request = await FriendShip.findByIdAndUpdate(requestId, {
     status: "accepted",
-  }).lean();
-  return request;
-};
-
-exports.declineFriendReq = async ({ requestId }) => {
-  const request = await FriendShip.findByIdAndUpdate(requestId, {
-    status: "declined",
   })
     .lean()
     .populate({
+      path: "senderId",
+      select: "_id firstName lastName avatar",
+    })
+    .populate({
       path: "recipientId",
-      select: "_id firstName lastName",
+      select: "_id firstName lastName avatar",
     });
 
-  const transformMap = {
-    _id: { newKey: "id" },
-    recipientId: { newKey: "recipient", nestedKey: { _id: { newKey: "id" } } },
-  };
+  return transformObj(request, transformFriendReq);
+};
 
-  const solveReq = transformObj(request, transformMap);
+exports.declineFriendReq = async ({ requestId }) => {
+  const request = await FriendShip.findByIdAndDelete(requestId)
+    .lean()
+    .populate({
+      path: "senderId",
+      select: "_id firstName lastName avatar",
+    })
+    .populate({
+      path: "recipientId",
+      select: "_id firstName lastName avatar",
+    });
 
-  return solveReq;
+  return transformObj(request, transformFriendReq);
 };
 
 exports.withdrawFriendReq = async ({ requestId }) => {
-  const request = await FriendShip.findByIdAndDelete(requestId).lean();
-  return request;
+  const request = await FriendShip.findByIdAndDelete(requestId)
+    .lean()
+    .populate({
+      path: "senderId",
+      select: "_id firstName lastName avatar",
+    })
+    .populate({
+      path: "recipientId",
+      select: "_id firstName lastName avatar",
+    });
+
+  return transformObj(request, transformFriendReq);
 };

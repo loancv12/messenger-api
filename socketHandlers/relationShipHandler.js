@@ -14,18 +14,18 @@ module.exports = (io, socket) => {
     "make_friend_request",
     errorHandler(socket, async (data, callback) => {
       console.log("make_friend_request", data);
-      const { to, from } = data;
+      const { recipientId, senderId } = data;
 
-      const res = await makeFriendReq({ to, from });
+      const request = await makeFriendReq({ recipientId, senderId });
 
-      io.to(to).emit("new_friend_req", {
+      io.to(recipientId).emit("new_friend_req", {
         message: "New Friend request received",
-        newFriendRequest: res,
+        newFriendReq: request,
       });
 
-      io.to(from).emit("send_req_ret", {
+      io.to(senderId).emit("send_req_ret", {
         message: "Request sent successfully",
-        newFriendRequest: res,
+        newFriendReq: request,
       });
     })
   );
@@ -42,8 +42,9 @@ module.exports = (io, socket) => {
         message: "Friend request accepted",
         request,
       };
-      io.to(request.recipientId)
-        .to(request.senderId)
+
+      io.to(request.recipient.id.toString())
+        .to(request.sender.id.toString())
         .emit("friend_req_accepted_ret", payload);
     })
   );
@@ -52,15 +53,17 @@ module.exports = (io, socket) => {
   socket.on(
     "decline_friend_req",
     errorHandler(socket, async (data) => {
+      console.log("decline_friend_req", data);
       const { requestId } = data;
 
       const request = await declineFriendReq({ requestId });
-
-      io.to(request.recipient.id).emit("friend_req_decline_ret", {
+      console.log("friend_req_decline_ret", request);
+      io.to(request.recipient.id.toString()).emit("friend_req_decline_ret", {
         message: "Decline friend request successful",
+        request,
       });
 
-      io.to(request.senderId).emit("friend_req_decline_ret", {
+      io.to(request.sender.id.toString()).emit("friend_req_decline_ret", {
         message: `${request.recipient.firstName} ${request.recipient.lastName} declined your friend request`,
         request,
       });
@@ -75,8 +78,14 @@ module.exports = (io, socket) => {
 
       const request = await withdrawFriendReq({ requestId });
 
-      io.to(userId).emit("withdraw_friend_req_ret", {
+      io.to(request.sender.id.toString()).emit("withdraw_friend_req_ret", {
         message: "Friend request withdraw successful",
+        request,
+      });
+
+      io.to(request.recipient.id.toString()).emit("withdraw_friend_req_ret", {
+        message: "Friend request was withdraw",
+        request,
       });
     })
   );

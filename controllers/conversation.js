@@ -85,11 +85,17 @@ exports.getDirectConversations = async (req, res) => {
       .json(makeMsgForRes("error", "Type must be direct_chat or group_chat."));
 
   const existCvss = await cvsDB[type]
-    .find({
-      participants: {
-        $all: [userId],
+    .find(
+      {
+        participants: {
+          $all: [userId],
+        },
       },
-    })
+      {},
+      {
+        sort: { updatedAt: -1 },
+      }
+    )
     .lean()
     .populate("participants", "firstName lastName _id online")
     .populate("lastMsg")
@@ -126,11 +132,17 @@ exports.getGroupConversations = async (req, res) => {
       .json(makeMsgForRes("error", "Type must be direct_chat or group_chat."));
 
   const existCvss = await cvsDB[type]
-    .find({
-      participants: {
-        $all: [userId],
+    .find(
+      {
+        participants: {
+          $all: [userId],
+        },
       },
-    })
+      {},
+      {
+        sort: { updatedAt: -1 },
+      }
+    )
     .lean()
     .populate("participants", "firstName lastName _id online")
     .populate("lastMsg")

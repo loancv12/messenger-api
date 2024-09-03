@@ -311,6 +311,7 @@ exports.loginWithGg = async (req, res, next) => {
         firstName,
         lastName,
         avatar,
+        verified: true,
       });
       console.log("new User", newUser);
     }
