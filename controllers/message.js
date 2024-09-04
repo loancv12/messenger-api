@@ -230,15 +230,24 @@ exports.getGroupMessages = async (req, res) => {
 };
 
 exports.createTextMsg = async ({ userId, chatType, newMsg }) => {
-  const { to, from, text, conversationId, type, isReply, replyMsgId } = newMsg;
+  const {
+    to,
+    from,
+    text,
+    conversationId,
+    isStartMsg,
+    type,
+    isReply,
+    replyMsgId,
+  } = newMsg;
 
-  const chat = await cvsDB[chatType].findById(conversationId);
+  // const chat = await cvsDB[chatType].findById(conversationId);
 
-  const isStartMsg =
-    add(chat.lastMsgCreatedTime, { minutes: msgInterval }) < new Date();
+  // const isStartMsg =
+  //   add(chat.lastMsgCreatedTime, { minutes: msgInterval }) < new Date();
 
   // create a msg
-  let new_message = {
+  let newMessage = {
     conversationId,
     from,
     type,
@@ -249,7 +258,7 @@ exports.createTextMsg = async ({ userId, chatType, newMsg }) => {
     ...(chatType === chatTypes.DIRECT_CHAT && { to }),
   };
 
-  let res = await msgDB[chatType].create(new_message);
+  let res = await msgDB[chatType].create(newMessage);
 
   if (res.isReply) {
     await res.populate({
@@ -259,8 +268,12 @@ exports.createTextMsg = async ({ userId, chatType, newMsg }) => {
   }
 
   // update latest time
-  chat.lastMsgCreatedTime = res.createdAt;
-  await chat.save();
+  await cvsDB[chatType].findByIdAndUpdate(conversationId, {
+    lastMsgCreatedTime: res.createAt,
+  });
+
+  // chat.lastMsgCreatedTime = res.createdAt;
+  // await chat.save();
   // save to db
 
   const solveMsg = transformMsg({ userId, msg: res.toObject() });

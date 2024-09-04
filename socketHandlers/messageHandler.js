@@ -99,7 +99,7 @@ module.exports = (io, socket) => {
     "text_message",
     errorHandler(socket, async (data) => {
       console.log("text_message", data);
-      const { type: chatType, newMsg } = data;
+      const { type: chatType, newMsg, tempId } = data;
       const { to, from, conversationId } = newMsg;
       const res = await createTextMsg({ userId, chatType, newMsg });
 
@@ -110,10 +110,11 @@ module.exports = (io, socket) => {
       };
 
       if (chatType === chatTypes.DIRECT_CHAT) {
-        io.to(from).emit("new_messages", payload);
+        io.to(from).emit("new_messages", { ...payload, tempId });
         io.to(to).emit("new_messages", payload);
       } else {
-        io.in(conversationId).emit("new_messages", payload);
+        socket.emit("new_messages", { ...payload, tempId });
+        socket.in(conversationId).emit("new_messages", payload);
       }
 
       // REMEMBER: this client is clientId of to user, not from user,
@@ -180,9 +181,15 @@ module.exports = (io, socket) => {
                 { readUserIds: { $not: { $all: [userId] } } },
               ],
             };
-      await msgDB[chatType].updateMany(filter, {
-        $set: { readUserIds: [userId] },
-      });
+      const update =
+        chatType === chatTypes.DIRECT_CHAT
+          ? {
+              $set: { readUserIds: [userId] },
+            }
+          : {
+              $push: { readUserIds: userId },
+            };
+      await msgDB[chatType].updateMany(filter, update);
 
       const payload = {
         newSeenUserId: userId,

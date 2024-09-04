@@ -19,14 +19,22 @@ const PersistMessage = require("../models/PersistMessage");
 
 const uploadFiles = async (req, res) => {
   const { files } = req;
-  const { to, from, conversationId, chatType, isReply, replyMsgId } = req.body;
+  const {
+    to,
+    from,
+    conversationId,
+    chatType,
+    isStartMsg,
+    isReply,
+    replyMsgId,
+  } = req.body;
   console.log("files", files);
   if (!files?.length)
     return res
       .status(404)
       .json(makeMsgForRes("error", "There is no file exist"));
 
-  const chat = await cvsDB[chatType].findById(conversationId).exec();
+  // const chat = await cvsDB[chatType].findById(conversationId).exec();
 
   // upload to fire storage and db
   // sorry for this stupid name
@@ -72,8 +80,10 @@ const uploadFiles = async (req, res) => {
   );
 
   // after msgInterval min, if y send a msg, thif msg have a timeline above it, this var to check it
-  const isStartMsg =
-    add(chat.lastMsgCreatedTime, { minutes: msgInterval }) < new Date();
+  // const chat = await cvsDB[chatType].findById(conversationId).exec();
+
+  // const isStartMsg =
+  //   add(chat.lastMsgCreatedTime, { minutes: msgInterval }) < new Date();
 
   // make all image as a single msg
   const newMessages = linkAndNameAndTypes.reduce(
@@ -117,10 +127,15 @@ const uploadFiles = async (req, res) => {
       select: "_id isDeleted text from",
     });
   }
-
   // make sure lastMsgCreatedTime is last msg createdAt, cause the virtual field lastMsg of Direct or Group Cvs need it
-  chat.lastMsgCreatedTime = ret[ret.length - 1].createdAt;
-  await chat.save();
+  await cvsDB[chatType]
+    .findByIdAndUpdate(conversationId, {
+      lastMsgCreatedTime: ret[ret.length - 1].createdAt,
+    })
+    .exec();
+
+  // chat.lastMsgCreatedTime = ret[ret.length - 1].createdAt;
+  // await chat.save();
 
   const solveMsgs = ret.map((msg) => transformMsg({ msg: msg.toObject() }));
 
