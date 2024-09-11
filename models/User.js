@@ -66,24 +66,6 @@ const userSchema = new Schema(
   { timestamps: true }
 );
 
-userSchema.pre("save", async function (next) {
-  // Only run this function is otp is actually modified
-  if (!this.isModified("otp")) return next();
-
-  if (this.otp) {
-    this.otp = await bcrypt.hash(this.otp, 12);
-  }
-
-  // next();
-});
-
-userSchema.pre("save", async function (next) {
-  if (!this.isModified("password")) return next();
-  this.password = await bcrypt.hash(this.password, 12);
-
-  // next();
-});
-
 userSchema.methods.correctPassword = async function (
   candidatePassword,
   userPassword
@@ -104,11 +86,6 @@ userSchema.methods.createPasswordResetToken = function () {
   this.passwordResetExpires = Date.now() + 10 * 60 * 1000; // 10mis after the token expired
 
   return resetToken;
-};
-
-userSchema.methods.changedPasswordAfter = function (timestamp) {
-  const passwordChangeTimes = Date.parse(this.passWordChangeAt);
-  return timestamp * 1000 < passwordChangeTimes;
 };
 
 const User = new mongoose.model("User", userSchema);

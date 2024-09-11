@@ -1,56 +1,10 @@
 const router = require("express").Router();
 const messageController = require("../controllers/message");
-const authController = require("../controllers/auth");
 const uploadFiles = require("../controllers/uploadMsgs");
-const multer = require("multer");
-const {
-  maxNumberOfFiles,
-  maxSize,
-  allowFileTypes,
-  allowFileExts,
-} = require("../config/conversation");
+const { maxNumberOfFiles } = require("../config/conversation");
 const { chatTypes } = require("../config/conversation");
 const verifyJWT = require("../middlewares/verifyJWT");
-
-const storage = multer.memoryStorage();
-const upload = multer({
-  storage: storage,
-  limits: {
-    fileSize: maxSize,
-    files: maxNumberOfFiles,
-    // docs not talk more about this property, but it default is infinity, so i limit it with random number
-    fields: 20,
-    parts: 100,
-  },
-  fileFilter: function fileFilter(req, file, cb) {
-    const { mimetype, originalname } = file;
-    console.log("at options of multer", file);
-    const extension = originalname.substring(originalname.lastIndexOf("."));
-
-    const validExt = allowFileTypes.find(
-      (allowType) => allowType.extension === extension
-    );
-
-    const isValidType =
-      validExt && (validExt.mimeType === mimetype || validExt?.notWideSp);
-
-    console.log("isValidType", isValidType);
-
-    // const isValidType = allowFileTypes.includes(mimetype);
-    // const isVAlidExt = allowFileExts.includes(ext);
-
-    // To accept the file pass `true`, like so:
-    if (isValidType) {
-      console.log("valid", file);
-      cb(null, true);
-    } else {
-      console.log("invalid", file);
-
-      // To reject this file pass `false`, like so:
-      cb(null, false);
-    }
-  },
-});
+const { uploadMsg } = require("../services/uploadFiles");
 
 router.get(
   `/get-messages/${chatTypes.DIRECT_CHAT}`,
@@ -67,7 +21,7 @@ router.get(
 router.post(
   "/upload-files",
   verifyJWT,
-  upload.array("message-files", maxNumberOfFiles),
+  uploadMsg.array("message-files", maxNumberOfFiles),
   uploadFiles
 );
 

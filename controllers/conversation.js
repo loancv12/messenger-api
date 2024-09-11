@@ -97,7 +97,7 @@ exports.getDirectConversations = async (req, res) => {
       }
     )
     .lean()
-    .populate("participants", "firstName lastName _id online")
+    .populate("participants", "firstName lastName avatar online")
     .populate("lastMsg")
     .populate({
       path: "numberOfUnreadMsgs",
@@ -144,7 +144,7 @@ exports.getGroupConversations = async (req, res) => {
       }
     )
     .lean()
-    .populate("participants", "firstName lastName _id online")
+    .populate("participants", "firstName lastName avatar online")
     .populate("lastMsg")
     .populate({
       path: "numberOfUnreadMsgs",
@@ -181,8 +181,8 @@ exports.getJoinGroupReqs = async (req, res) => {
     "groupId senderId"
   )
     .lean()
-    .populate("groupId", "_id name")
-    .populate("senderId", "_id firstName lastName online");
+    .populate("groupId", "name")
+    .populate("senderId", "firstName lastName avatar online");
 
   const transformMap = {
     groupId: {
@@ -226,7 +226,7 @@ exports.startConversation = async ({ userId, from, to }) => {
     },
   })
     .lean()
-    .populate("participants", "firstName lastName _id email online")
+    .populate("participants", "firstName lastName avatar online")
     .populate("lastMsg")
     .populate({
       path: "numberOfUnreadMsgs",
@@ -244,10 +244,7 @@ exports.startConversation = async ({ userId, from, to }) => {
       participants: [to, from],
     });
 
-    await new_chat.populate(
-      "participants",
-      "firstName lastName _id email online"
-    );
+    await new_chat.populate("participants", "firstName lastName avatar online");
     conversation = transformCvs({
       type: chatTypes.DIRECT_CHAT,
       userId,
@@ -290,7 +287,10 @@ exports.createGroup = async ({ name, members, adminId }) => {
     })),
   ]);
 
-  const admin = await User.findById(adminId, "_id firstName lastName online");
+  const admin = await User.findById(
+    adminId,
+    "firstName lastName avatar online"
+  );
 
   const conversation = {
     _id: newGroup._id,
@@ -337,7 +337,7 @@ exports.addMember = async ({ userId, requestId, groupId, newMemberId }) => {
     }
   )
     .lean()
-    .populate("participants", "firstName lastName _id online");
+    .populate("participants", "firstName lastName avatar online");
 
   const conversation = transformCvs({
     userId,

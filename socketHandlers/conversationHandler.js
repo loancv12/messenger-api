@@ -48,7 +48,10 @@ module.exports = (io, socket) => {
         newGroupCvs,
       });
 
-      const admin = await User.findById(adminId, "firstName lastName");
+      const admin = await User.findById(
+        adminId,
+        "firstName lastName avatar online"
+      );
       // invite other member to join room
       io.to(members.map((member) => member.id)).emit("join_group_request", {
         message: `${admin.firstName} ${admin.lastName} invite you to join group ${name}`,
@@ -94,7 +97,7 @@ module.exports = (io, socket) => {
         // join a room in socket and notice that a user join room successfully
         socket.join(groupId);
 
-        const newMember = await User.findById(userId, "_id firstName lastName");
+        const newMember = await User.findById(userId, "firstName lastName");
 
         // use io instead of socket to make sure that new user also receive event
         io.in(groupId).emit("new_member", {

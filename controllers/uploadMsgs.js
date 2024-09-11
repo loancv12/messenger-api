@@ -34,10 +34,7 @@ const uploadFiles = async (req, res) => {
       .status(404)
       .json(makeMsgForRes("error", "There is no file exist"));
 
-  // const chat = await cvsDB[chatType].findById(conversationId).exec();
-
   // upload to fire storage and db
-  // sorry for this stupid name
   const linkAndNameAndTypes = await Promise.all(
     files.map(async (file, i) => {
       const { originalname, mimetype, size, buffer } = file;
@@ -79,13 +76,7 @@ const uploadFiles = async (req, res) => {
     })
   );
 
-  // after msgInterval min, if y send a msg, thif msg have a timeline above it, this var to check it
-  // const chat = await cvsDB[chatType].findById(conversationId).exec();
-
-  // const isStartMsg =
-  //   add(chat.lastMsgCreatedTime, { minutes: msgInterval }) < new Date();
-
-  // make all image as a single msg
+  // make all image into a single msg
   const newMessages = linkAndNameAndTypes.reduce(
     (clarifiedMsgs, { link, originalname, type }, i) => {
       console.log("link and type", { link, originalname, type });
@@ -118,7 +109,7 @@ const uploadFiles = async (req, res) => {
     []
   );
 
-  // create new messages and populate, i know some comment look stupid, but it good for visually separate the block of logic
+  // create new messages and populate,
   const ret = await msgDB[chatType].create(newMessages);
 
   if (isReply) {
@@ -127,21 +118,16 @@ const uploadFiles = async (req, res) => {
       select: "_id isDeleted text from",
     });
   }
-  // make sure lastMsgCreatedTime is last msg createdAt, cause the virtual field lastMsg of Direct or Group Cvs need it
+  // update cvs lastMsgCreatedTime
   await cvsDB[chatType]
     .findByIdAndUpdate(conversationId, {
       lastMsgCreatedTime: ret[ret.length - 1].createdAt,
     })
     .exec();
 
-  // chat.lastMsgCreatedTime = ret[ret.length - 1].createdAt;
-  // await chat.save();
-
   const solveMsgs = ret.map((msg) => transformMsg({ msg: msg.toObject() }));
 
-  // REMEMBER: this client is clientId of to user, not from user,
-  //  so when the to receive it, it will delete right clientId for right tab, not client for to user of another tab
-  // and when receiver miss it cause of lost connection, it will get right missed msg for it
+  // persist msg
   const clients = await Client.find({ userId: to }).lean();
   const persistMsgs = clients.flatMap((client) =>
     solveMsgs.map((msg) => ({
@@ -151,7 +137,6 @@ const uploadFiles = async (req, res) => {
       expireAt: new Date(),
     }))
   );
-
   await PersistMessage.create(persistMsgs);
 
   // emit it to to and from
@@ -164,15 +149,14 @@ const uploadFiles = async (req, res) => {
     };
 
     if (chatType === chatTypes.DIRECT_CHAT) {
-      io.to(from).emit("new_messages", payload);
-      io.to(to).emit("new_messages", payload);
+      io.to(from).to(to).emit("new_messages", payload);
     } else {
       io.to(conversationId).emit("new_messages", payload);
     }
   } else
     return res
       .status(500)
-      .json(makeMsgForRes("error", "Somw thing wrong when connect to socket"));
+      .json(makeMsgForRes("error", "Some thing wrong when connect to socket"));
 
   res.status(200).json(makeMsgForRes("success", "Upload successfully"));
 };

@@ -1,7 +1,6 @@
 const mongoose = require("mongoose");
 const User = require("../models/User");
 const FriendShip = require("../models/FriendShip");
-const filterObj = require("../utils/filterObj");
 const {
   transformObj,
   replaceId,
@@ -9,13 +8,14 @@ const {
   transformFriendReq,
 } = require("../utils/transform");
 const makeMsgForRes = require("../utils/msgForRes");
+const { uploadFileToFb } = require("../services/firebase");
 
 exports.getMe = async (req, res, next) => {
   const { userId } = req.user;
 
   const userInfo = await User.findById(
     userId,
-    "_id firstName lastName online avatar"
+    "firstName lastName online avatar"
   ).lean();
 
   return res.json(
@@ -28,26 +28,55 @@ exports.getMe = async (req, res, next) => {
 };
 
 exports.updateMe = async (req, res, next) => {
-  const { user } = req;
+  const { userId } = req.user;
+  const { file } = req;
+  const { firstName, lastName } = req.body;
+  console.log("file", file);
+  let link = "";
+  if (file) {
+    // upload to fire storage and db
+    const { originalname, mimetype, size, buffer } = file;
 
-  const filteredBody = filterObj(
-    user,
-    "firstName",
-    "lastName",
-    "avatar",
-    "about"
-  );
+    const ext = originalname.substring(originalname.lastIndexOf("."));
 
-  const updated_user = await User.findByIdAndUpdate(user._id, filteredBody, {
-    new: true,
-    runValidators: true,
-  });
+    const blobFile = new Blob([buffer]);
 
-  res.status(200).json({
-    status: "success",
-    data: updated_user,
-    message: "Profile Updated successfully",
-  });
+    const path = `message/${Date.now().toString()}`;
+    const name = `${path}.${ext}`;
+    const metadata = {
+      contentType: mimetype,
+      name,
+      size,
+    };
+
+    link = await uploadFileToFb({
+      path,
+      blobFile,
+      metadata,
+    });
+  }
+
+  // // create new messages and populate,
+  const updatedUser = await User.findByIdAndUpdate(
+    userId,
+    {
+      firstName,
+      lastName,
+      avatar: link,
+    },
+    {
+      new: true,
+      runValidators: true,
+      select: "firstName lastName avatar online",
+    }
+  ).lean();
+
+  console.log("updatedUser", updatedUser);
+  const solveUser = transformObj(updatedUser, transformId);
+  console.log("solveUser", solveUser);
+  res
+    .status(200)
+    .json(makeMsgForRes("success", "Profile Updated successfully", solveUser));
 };
 
 exports.getUsers = async (req, res, next) => {
@@ -70,7 +99,7 @@ exports.getUsers = async (req, res, next) => {
   const remainUsers = await User.find({
     $and: [{ verified: true }, { _id: { $nin: [...inRelationUsers, userId] } }],
   })
-    .select("firstName lastName id online")
+    .select("firstName lastName avatar online")
     .lean();
 
   const solveUsers = remainUsers.map((user) => {
@@ -95,8 +124,11 @@ exports.getFriends = async (req, res, next) => {
   })
     .select("-status")
     .lean()
-    .populate({ path: "recipientId", select: "_id firstName lastName online" })
-    .populate({ path: "senderId", select: "_id firstName lastName online" });
+    .populate({
+      path: "recipientId",
+      select: "firstName lastName avatar online",
+    })
+    .populate({ path: "senderId", select: "firstName lastName avatar online" });
 
   const solveUsers = friendShips.map((friendShip) => {
     const { recipientId, senderId } = friendShip;
@@ -125,9 +157,9 @@ exports.getRequests = async (req, res, next) => {
     .lean()
     .populate({
       path: "recipientId",
-      select: "_id firstName lastName online",
+      select: "firstName lastName avatar online",
     })
-    .populate({ path: "senderId", select: "_id firstName lastName online" });
+    .populate({ path: "senderId", select: "firstName lastName avatar online" });
 
   const solveFriendReq = friendShips.map((friendShip) =>
     transformObj(friendShip, transformFriendReq)
@@ -149,11 +181,11 @@ exports.makeFriendReq = async ({ senderId, recipientId }) => {
 
   await res.populate({
     path: "senderId",
-    select: "_id firstName lastName avatar",
+    select: "firstName lastName avatar online",
   });
   await res.populate({
     path: "recipientId",
-    select: "_id firstName lastName avatar",
+    select: "firstName lastName avatar online",
   });
 
   return transformObj(res.toObject(), transformFriendReq);
@@ -166,11 +198,11 @@ exports.acceptFriendReq = async ({ requestId }) => {
     .lean()
     .populate({
       path: "senderId",
-      select: "_id firstName lastName avatar",
+      select: "firstName lastName avatar online",
     })
     .populate({
       path: "recipientId",
-      select: "_id firstName lastName avatar",
+      select: "firstName lastName avatar online",
     });
 
   return transformObj(request, transformFriendReq);
@@ -181,11 +213,11 @@ exports.declineFriendReq = async ({ requestId }) => {
     .lean()
     .populate({
       path: "senderId",
-      select: "_id firstName lastName avatar",
+      select: "firstName lastName avatar online",
     })
     .populate({
       path: "recipientId",
-      select: "_id firstName lastName avatar",
+      select: "firstName lastName avatar online",
     });
 
   return transformObj(request, transformFriendReq);
@@ -196,11 +228,11 @@ exports.withdrawFriendReq = async ({ requestId }) => {
     .lean()
     .populate({
       path: "senderId",
-      select: "_id firstName lastName avatar",
+      select: "firstName lastName avatar online",
     })
     .populate({
       path: "recipientId",
-      select: "_id firstName lastName avatar",
+      select: "firstName lastName avatar online",
     });
 
   return transformObj(request, transformFriendReq);

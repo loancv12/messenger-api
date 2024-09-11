@@ -4,98 +4,68 @@ const otpGenerator = require("otp-generator");
 const crypto = require("crypto");
 const bcrypt = require("bcrypt");
 const otpTemplate = require("../Templates/Mail/otp");
+const resetLinkTemplate = require("../Templates/Mail/resetLink");
 const { OAuth2Client } = require("google-auth-library");
 const axios = require("axios");
 //
 
 const User = require("../models/User");
 const filterObj = require("../utils/filterObj");
-const mailService = require("../services/mailer");
+const { sendMail } = require("../services/mailer");
 const makeMsgForRes = require("../utils/msgForRes");
 const Client = require("../models/Client");
 const PersistMessage = require("../models/PersistMessage");
 const { googleEndpoints, getUserInfo } = require("../services/google");
-
-// signup => register => send OTP => verified OTP
+const getFullName = require("../utils/getFullName");
+const { currBaseUrl } = require("../config/appInfo");
 
 // Register
 exports.register = async (req, res, next) => {
   const { firstName, lastName, email, password } = req.body;
+
+  // validate fields
   if (!firstName || !lastName || !email || !password)
     return res
       .status(400)
       .json(makeMsgForRes("error", "Email and password are required"));
 
-  let filteredBody = filterObj(
-    req.body,
-    "firstName",
-    "lastName",
-    "password",
-    "email"
-  );
-  // Check verify user with given email
-  const existing_user = await User.findOne({ email });
-  if (existing_user && existing_user.verified)
+  // Check duplicate with email verified
+  const foundUser = await User.findOne({ email });
+  if (foundUser && foundUser.verified)
     return res
       .status(409)
       .json(makeMsgForRes("error", "Email is already used"));
-  if (existing_user) {
-    // because bcrypt make diff hash with same input,
-    // so incase pwd is the same, password not isModified, bcrypt not hash, pwd will be stored in db in plain text
-    // to prevent this, check is samepwd,
-    const isSamePwdAsPrev = await existing_user.correctPassword(
-      password,
-      existing_user.password
-    );
 
-    if (isSamePwdAsPrev) {
-      const { password, ...rest } = filteredBody;
-      filteredBody = rest;
-    }
+  // hash pwd
+  const hashPwd = await bcrypt.hash(password, 12);
 
-    await User.findOneAndUpdate({ email }, filteredBody, {
-      new: true,
-      runValidators: true,
+  // create new user
+  if (!foundUser) {
+    const newUser = await User.create({
+      password: hashPwd,
+      firstName,
+      lastName,
+      email,
     });
 
-    // generate OTP and send email to user
-    req.userId = existing_user._id;
-    next();
+    req.userId = newUser._id;
   } else {
-    // if user record not avaible
-    const new_user = await User.create(filteredBody);
-
-    // generate OTP and send email to user
-    req.userId = new_user._id;
-    next();
+    // update fields
+    await User.findOneAndUpdate(
+      { email },
+      { password: hashPwd, firstName, lastName, email }
+    ).lean();
+    req.userId = foundUser._id;
   }
-};
 
-exports.resendOTP = async (req, res, next) => {
-  const { email } = req.body;
-
-  if (!email)
-    return res.state(400).json(makeMsgForRes("error", "Email is required"));
-
-  const user = await User.findOne({ email, verified: false }).exec();
-  if (!user)
-    return res
-      .state(400)
-      .json(
-        makeMsgForRes(
-          "error",
-          "User not found or this user is already verified"
-        )
-      );
-
-  // generate OTP and send email to user
-  req.userId = user._id;
+  // turn to sendOtp mdw
   next();
 };
-// send OTP
+
 exports.sendOTP = async (req, res, next) => {
   const { userId } = req;
-  const new_otp = otpGenerator
+  // create otp
+  const newOtp = otpGenerator
     .generate(6, {
       lowerCaseAlphabets: false,
       upperCaseAlphabets: false,
@@ -103,44 +73,82 @@ exports.sendOTP = async (req, res, next) => {
     })
     .toString();
 
-  const otp_expiry_time = Date.now() + 10 * 60 * 1000; //10 mins after OTP is sent
-  console.log("new_otp", new_otp);
+  const otpExpiryTime = Date.now() + 10 * 60 * 1000; //10 mins after OTP is sent
+  console.log("newOtp", newOtp);
 
-  const user = await User.findById(userId);
-  user.otp = new_otp;
-  user.otp_expiry_time = otp_expiry_time;
-  await user.save();
+  // hash otp
+  const hashOtp = await bcrypt.hash(newOtp, 12);
 
-  await mailService
-    .sendMail({
-      from: "contact@tawk.com",
-      to: "example@gmail.com",
+  // update otp at db
+  const user = await User.findByIdAndUpdate(
+    userId,
+    {
+      otp: hashOtp,
+      otp_expiry_time: otpExpiryTime,
+    },
+    {
+      select: "firstName lastName email",
+    }
+  ).exec();
+
+  try {
+    // send mail
+    await sendMail({
+      to: user.email,
+      toName: getFullName(user),
       subject: "OTP for login",
-      // text: `Your OTP is ${new_otp}`,
-      html: otpTemplate(user.firstName, new_otp),
-    })
-    .then(() => {
-      res.status(200).json(
-        makeMsgForRes("success", "OTP sent successfully!", {
-          email: user.email,
-        })
-      );
-    })
-    .catch((err) => {
-      console.log(err);
-      res.status(500).json(makeMsgForRes("error", "Server wrong!"));
+      text: `Your OTP is ${newOtp}`,
+      html: otpTemplate(user.firstName, newOtp),
     });
+
+    res.status(200).json(
+      makeMsgForRes("success", "OTP sent successfully!", {
+        email: user.email,
+      })
+    );
+  } catch (err) {
+    console.log(err);
+    user.otp = undefined;
+    user.otp_expiry_time = undefined;
+
+    await user.save({ validateBeforeSave: false });
+    res.status(500).json(makeMsgForRes("error", "Send otp failed"));
+  }
 };
 
-// Verify OTP
+exports.resendOTP = async (req, res, next) => {
+  const { email } = req.body;
+
+  // check field validate
+  if (!email)
+    return res.status(400).json(makeMsgForRes("error", "Email is required"));
+
+  // check user exist
+  const user = await User.findOne({ email, verified: false }).lean();
+  if (!user)
+    return res
+      .status(400)
+      .json(
+        makeMsgForRes(
+          "error",
+          "User not found or this user is already verified"
+        )
+      );
+
+  req.userId = user._id;
+  // turn to sendOtp mdw
+  next();
+};
+
 exports.verifyOTP = async (req, res, next) => {
   const { email, otp } = req.body;
-
+  // validate fields
   if (!email || !otp)
     return res
       .status(400)
       .json(makeMsgForRes("error", "Email and otp are required"));
 
+  // check user exist and otp is expired
   const user = await User.findOne({
     email,
     otp_expiry_time: { $gt: Date.now() },
@@ -151,45 +159,60 @@ exports.verifyOTP = async (req, res, next) => {
       .status(400)
       .json(makeMsgForRes("error", "Email is Invalid or OTP expired"));
 
+  // check otp is correct
   const isCorrectOtp = await user.correctOTP(otp, user.otp);
 
   if (!isCorrectOtp)
     return res.status(400).json(makeMsgForRes("error", "OTP not correct"));
 
-  // OTP is correct
+  // update user in db
   user.verified = true;
   user.otp = undefined;
   user.otp_expiry_time = undefined;
 
   await user.save({ validateModifiedOnly: true });
 
-  const token = signToken(user._id, user.email);
-  res
-    .status(200)
-    .json(makeMsgForRes("success", "OTP verified successfully", token));
+  res.status(200).json(makeMsgForRes("success", "OTP verified successfully"));
 };
 
-// login
 exports.login = async (req, res, next) => {
   const { email, password } = req.body;
   if (!email || !password)
+    return res.status(400).json({
+      status: "error",
+      message: "Email and password are required",
+    });
+
+  // check user exist
+  const foundUser = await User.findOne({ email }).select("+password");
+  if (!foundUser)
     return res
       .status(400)
       .json(makeMsgForRes("error", "Email and password are required"));
 
-  const foundUser = await User.findOne({ email }).select("+password");
-  if (!foundUser)
-    return res.status(400).json(makeMsgForRes("error", "User not found"));
+  // check user verified
+  if (!foundUser.verified)
+    return res
+      .status(400)
+      .json(
+        makeMsgForRes(
+          "error",
+          "Your email is not verified. Please verified it or register it again"
+        )
+      );
 
+  // check correct email and password
   const isCorrectPwd = await foundUser.correctPassword(
     password,
     foundUser.password
   );
+
   if (!isCorrectPwd)
     return res
       .status(400)
       .json(makeMsgForRes("error", "Email or Password is incorrect"));
 
+  // create at and rt
   const accessToken = jwt.sign(
     {
       userInfo: {
@@ -215,24 +238,24 @@ exports.login = async (req, res, next) => {
   );
 
   const cookies = req.cookies;
-  let newRefreshTokenArray = !cookies?.jwt
-    ? foundUser.refreshTokens // first time login
-    : // incase that this user login sw, and someone else/ this user use old token,
-      // and some browsers use session restoring when restarting. This can cause session cookies to last indefinitely.
-      foundUser.refreshTokens.filter((rft) => rft !== cookies?.jwt);
-
-  // incase old token was use
+  let newRefreshTokenArray;
+  // incase old token was use: remove use old refresh token
   if (cookies?.jwt) {
     const oldRefreshToken = cookies.jwt;
-    // incase old token was use by foundUser, not logout or refresh so token still there
+
     const foundToken = await User.findOne({
       refreshTokens: { $in: [oldRefreshToken] },
     }).exec();
 
     // no one have this token, => token was use by strange user, not foundUser, so not provide any token
     if (!foundToken) {
-      // clear out ALL previous refresh tokens
       newRefreshTokenArray = [];
+    } else {
+      // incase old token was use by foundUser, not logout or refresh so token still there
+      // make old session invalid (in FE, login again was prevented)
+      newRefreshTokenArray = foundUser.refreshTokens.filter(
+        (rft) => rft !== cookies?.jwt
+      );
     }
 
     // clear old cookie in browser
@@ -241,9 +264,12 @@ exports.login = async (req, res, next) => {
       // sameSite: "None",
       // secure: true,
     });
+  } else {
+    // first time login, no rt found
+    newRefreshTokenArray = foundUser.refreshTokens;
   }
 
-  // // Saving refreshToken with current user
+  // Saving refreshToken with current user
   foundUser.online = true;
   foundUser.refreshTokens = [...newRefreshTokenArray, newRefreshToken];
   await foundUser.save();
@@ -255,15 +281,10 @@ exports.login = async (req, res, next) => {
     // sameSite: "None", //cross-site cookie
     maxAge: 7 * 24 * 60 * 60 * 1000, //cookie expiry: set to match rT
   });
-  const test = JSON.stringify({
-    message: "Login successfully",
-    data: accessToken,
-  });
-  //makeMsgForRes("success", "Login successfully", accessToken)
-  res.status(200).json({
-    message: "Login successfully",
-    data: accessToken,
-  });
+
+  res
+    .status(200)
+    .json(makeMsgForRes("success", "Login successful", accessToken));
 };
 
 exports.loginWithGg = async (req, res, next) => {
@@ -300,7 +321,6 @@ exports.loginWithGg = async (req, res, next) => {
       existingUser.lastName = lastName;
       existingUser.avatar = avatar;
       await existingUser.save();
-      console.log("existingUser", existingUser);
     } else {
       // create new user
       const password = sub;
@@ -313,7 +333,6 @@ exports.loginWithGg = async (req, res, next) => {
         avatar,
         verified: true,
       });
-      console.log("new User", newUser);
     }
 
     req.body = {
@@ -422,7 +441,6 @@ exports.refresh = async (req, res, next) => {
 
 exports.logout = async (req, res, next) => {
   const { clientId } = req.body;
-  console.log("clientId in lgout", clientId);
   const cookies = req.cookies;
   if (!cookies?.jwt)
     return res
@@ -466,11 +484,12 @@ exports.logout = async (req, res, next) => {
 };
 
 exports.forgetPassword = async (req, res, next) => {
-  // get the users email
   const { email } = req.body;
+  // validate field
   if (!email)
     return res.status(400).json(makeMsgForRes("error", "Email is required"));
 
+  // check user exist
   const user = await User.findOne({ email });
   if (!user)
     return res
@@ -481,14 +500,14 @@ exports.forgetPassword = async (req, res, next) => {
   const resetToken = user.createPasswordResetToken();
 
   try {
-    const resetURL = `https://tawk.com/auth/reset-password?token=${resetToken}`;
-    // TODO => send email with reset url
-
-    await mailService.sendMail({
-      from: "contact@tawk.com",
-      to: "example@gmail.com",
+    // send mail
+    const resetURL = `${currBaseUrl}/auth/reset-password?token=${resetToken}`;
+    await sendMail({
+      to: user.email,
+      toName: getFullName(user),
       subject: "Reset password",
-      text: `Click here to reset password : ${resetURL}`,
+      text: `Reset password`,
+      html: resetLinkTemplate(user.firstName, resetURL),
     });
 
     await user.save({ validateBeforeSave: false });
@@ -513,13 +532,15 @@ exports.forgetPassword = async (req, res, next) => {
 };
 
 exports.resetPassword = async (req, res, next) => {
-  // get the user based on token
   const { token: resetToken, password } = req.body;
+
+  // validate fields
   if (!password || !resetToken)
     return res
       .status(400)
       .json(makeMsgForRes("error", "Token and your new password is required"));
 
+  // check correct token
   const hashedToken = crypto
     .createHash("sha256")
     .update(resetToken)
@@ -530,28 +551,25 @@ exports.resetPassword = async (req, res, next) => {
     passwordResetExpires: { $gt: Date.now() },
   });
 
-  // if token has expired or submission is out of time window
+  // if token has expired or token not correct
   if (!user)
     return res
       .status(400)
       .json(makeMsgForRes("error", "Wrong token or token expired"));
 
-  // update users password and set resetToken $ expiry to undefined
-  // TODO=> check isSamePwd
-  user.password = req.body.password;
-  user.passwordConfirm = req.body.passwordConfirm;
+  // hash pwd
+  const hashPwd = await bcrypt.hash(password, 12);
+
+  // update at db and make all other session invalid
+  user.password = hashPwd;
+  user.passwordConfirm = hashPwd;
   user.passWordChangeAt = Date.now();
+  user.refreshTokens = [];
 
   user.passwordResetToken = undefined;
   user.passwordResetExpires = undefined;
 
   await user.save();
 
-  // login the user and send new JWT
-
-  // TODO send an email to user informing about password reset
-  const token = signToken(user._id, user.email);
-  res
-    .status(200)
-    .json(makeMsgForRes("success", "Reset password successfully", token));
+  res.status(200).json(makeMsgForRes("success", "Reset password successfully"));
 };

@@ -1,58 +1,29 @@
-const nodemailer = require("nodemailer");
+const { appName } = require("../config/appInfo");
+const Recipient = require("mailersend").Recipient;
+const EmailParams = require("mailersend").EmailParams;
+const MailerSend = require("mailersend").MailerSend;
+const Sender = require("mailersend").Sender;
 
-const html = `
-<h1>Hello</h1>
+const mailerSendConfig = { apiKey: process.env.EMAIL_TOKEN };
 
-`;
+exports.sendMail = async ({ to, toName, subject, text, html }) => {
+  const mailerSend = new MailerSend(mailerSendConfig);
 
-const transporter = nodemailer.createTransport({
-  // host: "smtp.forwardemail.net",
-  // port: 465,
-  // secure: true,
-  // auth: {
-  //   // TODO: replace `user` and `pass` values from <https://forwardemail.net>
-  //   user: "REPLACE-WITH-YOUR-ALIAS@YOURDOMAIN.COM",
-  //   pass: "REPLACE-WITH-YOUR-GENERATED-PASSWORD",
-  // },
-  service: "gmail",
-  auth: {
-    user: "lanOrangejuice@gmail.com",
-    pass: "yourpassword",
-  },
-});
+  const recipients = [new Recipient(to, toName)];
 
-// async..await is not allowed in global scope, must use a wrapper
-async function sendNMMail({ from, to, subject, html, text, attachments }) {
-  // send mail with defined transport object
-  try {
-    const info = await transporter.sendMail({
-      from: from || "contact@tawk.com",
-      to: to,
-      subject,
-      html,
-      text,
-      attachments,
-    });
+  const sentFrom = new Sender(
+    `${appName}@${process.env.EMAIL_DOMAIN}`,
+    appName
+  );
 
-    console.log("Message sent: %s", info.messageId);
-  } catch (error) {
-    console.log(error);
-  }
-  // Message sent: <b658f8ca-6296-ccf4-8306-87d57a0b4321@example.com>
+  const emailParams = new EmailParams()
+    .setFrom(sentFrom)
+    .setTo(recipients)
+    .setSubject(subject)
+    .setHtml(html)
+    .setText(text);
 
-  //
-  // NOTE: You can go to https://forwardemail.net/my-account/emails to see your email delivery status and preview
-  //       Or you can use the "preview-email" npm package to preview emails locally in browsers and iOS Simulator
-  //       <https://github.com/forwardemail/preview-email>
-  //
-}
-
-exports.sendMail = async function (args) {
-  if (process.env.NODE_ENV === "development") {
-    console.log("send mail");
-    return Promise.resolve();
-  } else {
-    return sendNMMail(args);
-  }
+  console.log("send mail");
+  // await Promise.resolve();
+  await mailerSend.email.send(emailParams);
 };
-// sendMail().catch(console.error);
