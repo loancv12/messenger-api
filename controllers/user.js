@@ -71,9 +71,7 @@ exports.updateMe = async (req, res, next) => {
     }
   ).lean();
 
-  console.log("updatedUser", updatedUser);
   const solveUser = transformObj(updatedUser, transformId);
-  console.log("solveUser", solveUser);
   res
     .status(200)
     .json(makeMsgForRes("success", "Profile Updated successfully", solveUser));

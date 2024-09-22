@@ -5,11 +5,9 @@ const userToRoom = {};
 
 module.exports = (io, socket) => {
   const userId = socket.userId;
-  const nsp = socket.nsp;
   let currRoomId;
   const socketId = socket.id;
   console.log("socket.id", socketId);
-  console.log(userIdsARoom, userToRoom);
   socket.join(userId);
 
   socket.on(
@@ -17,7 +15,6 @@ module.exports = (io, socket) => {
     errorHandler(socket, async (data) => {
       const { roomId } = data;
       console.log("join_room", data, userIdsARoom, userToRoom);
-      // socket.join(roomId);
 
       currRoomId = roomId;
 
@@ -95,7 +92,6 @@ module.exports = (io, socket) => {
     socket.leave(userId);
     userIdsARoom[currRoomId] = otherUserObjsInRoom;
     userToRoom[currRoomId] = null;
-    console.log("leave_room", data);
   });
 
   socket.on(
@@ -103,7 +99,7 @@ module.exports = (io, socket) => {
     errorHandler(socket, async (data) => {
       if (currRoomId) {
         const userObjs = userIdsARoom[currRoomId];
-        console.log("userObjs", userObjs);
+        console.log("disconnect", userObjs);
 
         const otherUserObjsInRoom = userObjs?.filter(
           (userObj) => userObj.userId !== userId

@@ -46,7 +46,7 @@ exports.transformMsg = transformMsg;
 
 exports.getDirectMessages = async (req, res, next) => {
   const { type, conversationId, endCursor, startCursor } = req.query;
-  console.log("req.query", req.query);
+
   if (!Object.values(chatTypes).includes(type) || !conversationId || !endCursor)
     return res.status(400).json({
       error: "Type must be direct_chat or group_chat",
@@ -55,8 +55,6 @@ exports.getDirectMessages = async (req, res, next) => {
   let retCvs;
   let isHaveMoreMsg;
 
-  // startCursor is for when y click to replymsg
-  // it will call api with this var to get all the msg from the msg that replied to the endCursor msg(oldest msg in list in FE)
   if (!startCursor) {
     retCvs = await cvsDB[type]
       .findById(conversationId, "messages")
@@ -141,7 +139,7 @@ exports.getDirectMessages = async (req, res, next) => {
 
 exports.getGroupMessages = async (req, res) => {
   const { type, conversationId, endCursor, startCursor } = req.query;
-  console.log("startCursor", startCursor, endCursor, type, conversationId);
+
   if (!Object.values(chatTypes).includes(type) || !conversationId || !endCursor)
     return res.status(400).json({
       error: "Type must be direct_chat or group_chat",
@@ -157,7 +155,6 @@ exports.getGroupMessages = async (req, res) => {
         path: "messages",
         options: {
           sort: { createdAt: -1 },
-          // add msgsLimit+1 to check isHaveMoreMsg, if it return 21=> have more, else, dont have more
           perDocumentLimit: msgsLimit + 1,
         },
         populate: {
@@ -210,15 +207,13 @@ exports.getGroupMessages = async (req, res) => {
 
   res.append("x-pagination", isHaveMoreMsg);
 
-  // because of sort: { createdAt: -1 } when getMsg, all msg is ordered from latest:0 to oldest:21
-  // cause when get 21 msgs, we need to pop it
+  // when get 21 msgs, we need to pop it
   const msgs = retCvs.messages;
   if (!startCursor && isHaveMoreMsg) {
     msgs.pop();
   }
 
   // solve for deleted msg
-  // reverse it: oldest:0 to latest:20
   const solveList = msgs.map((_, i) =>
     transformMsg({ msg: msgs[msgs.length - 1 - i] })
   );
@@ -240,11 +235,6 @@ exports.createTextMsg = async ({ userId, chatType, newMsg }) => {
     isReply,
     replyMsgId,
   } = newMsg;
-
-  // const chat = await cvsDB[chatType].findById(conversationId);
-
-  // const isStartMsg =
-  //   add(chat.lastMsgCreatedTime, { minutes: msgInterval }) < new Date();
 
   // create a msg
   let newMessage = {
@@ -272,29 +262,20 @@ exports.createTextMsg = async ({ userId, chatType, newMsg }) => {
     lastMsgCreatedTime: res.createAt,
   });
 
-  // chat.lastMsgCreatedTime = res.createdAt;
-  // await chat.save();
-  // save to db
-
   const solveMsg = transformMsg({ userId, msg: res.toObject() });
   return solveMsg;
 };
 
 exports.updateSentSuccessMsgs = async ({ chatType, messages, sentSuccess }) => {
-  console.log("updateSentSuccessMsgs", chatType, messages);
-
   const res = await msgDB[chatType].updateMany(
     {
       _id: { $in: messages.map((msg) => msg.id) },
     },
     { $set: { sentSuccess } }
   );
-  console.log("updateSentSuccessMsgs ret", res);
 };
 
 exports.deleteMsg = async ({ msgId, type }) => {
-  console.log("deleteMsg at delete msg", msgId);
-
   const delMsg = await msgDB[type]
     .findByIdAndUpdate(
       msgId,

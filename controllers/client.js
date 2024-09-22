@@ -13,7 +13,6 @@ exports.createClient = async (req, res) => {
 
   const foundClient = await Client.findOne({ userId, clientId }).lean();
 
-  // duplicate due to refresh page, duplicate tab (cause each clientId is stored in session storage)
   if (foundClient) {
     // create new clientId and send it to fe
     const clientIdGeneratedFromServer = uuidv4();
@@ -23,14 +22,12 @@ exports.createClient = async (req, res) => {
       expireAt: new Date(),
     });
 
-    console.log(ret);
     return res.json(
       makeMsgForRes("error", "Duplicate clientId", clientIdGeneratedFromServer)
     );
   }
 
   const ret = await Client.create({ userId, clientId, expireAt: new Date() });
-  console.log(ret);
 
   res.json(makeMsgForRes("success", "Create client successfully", ret));
 };
@@ -41,6 +38,7 @@ exports.addSocket = async (req, res) => {
     return res
       .status(400)
       .json(makeMsgForRes("error", "All field are required"));
+
   const ret = await Client.findOneAndUpdate(
     { clientId },
     { socketId },
@@ -48,7 +46,7 @@ exports.addSocket = async (req, res) => {
       new: true,
     }
   ).lean();
-  console.log(ret);
+
   res.json(makeMsgForRes("success", "Delete client successfully"));
 };
 
@@ -58,8 +56,9 @@ exports.deleteClient = async (req, res) => {
     return res
       .status(400)
       .json(makeMsgForRes("error", "All field are required"));
+
   const ret = await Client.findOneAndDelete({ clientId }).lean();
   await PersistMessage.deleteMany({ clientId });
-  console.log(ret);
+
   res.json(makeMsgForRes("success", "Delete client successfully"));
 };

@@ -28,7 +28,6 @@ const uploadFiles = async (req, res) => {
     isReply,
     replyMsgId,
   } = req.body;
-  console.log("files", files);
   if (!files?.length)
     return res
       .status(404)
@@ -79,7 +78,6 @@ const uploadFiles = async (req, res) => {
   // make all image into a single msg
   const newMessages = linkAndNameAndTypes.reduce(
     (clarifiedMsgs, { link, originalname, type }, i) => {
-      console.log("link and type", { link, originalname, type });
       const imgMsgIndex = clarifiedMsgs.findIndex(
         (newMsg) => newMsg.type === "img"
       );

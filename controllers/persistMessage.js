@@ -19,7 +19,6 @@ exports.getPersistMessages = async (req, res) => {
         select: "_id text from isDeleted createdAt",
       },
     });
-  console.log("getPersistMessages", ret);
 
   res.json(makeMsgForRes("success", "Get persistMessage successfully", ret));
 };
@@ -35,7 +34,6 @@ exports.createPersistMessages = async (req, res) => {
   const ret = await PersistMessage.create(
     msgIds.map((msgId) => ({ clientId, msgId, msgModel, expireAt: new Date() }))
   );
-  console.log("createPersistMessages", ret);
 
   res.json(makeMsgForRes("success", "Create persistMessage successfully", ret));
 };
@@ -53,7 +51,6 @@ exports.deletePersistMessages = async (req, res) => {
     return res.status(400).json(makeMsgForRes("error", "Not found client"));
 
   const ret = await PersistMessage.deleteMany({ clientId }).lean();
-  console.log("deletePersistMessages", ret);
 
   res.json(makeMsgForRes("success", "Delete persistMessage successfully"));
 };

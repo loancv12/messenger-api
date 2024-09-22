@@ -314,7 +314,6 @@ exports.createGroup = async ({ name, members, adminId }) => {
 };
 
 exports.addMember = async ({ userId, requestId, groupId, newMemberId }) => {
-  console.log("addMember", userId, requestId, groupId, newMemberId);
   await JoinGroupRequest.findByIdAndUpdate(requestId, {
     status: "accepted",
   });
